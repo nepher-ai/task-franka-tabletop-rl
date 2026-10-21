@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -185,6 +186,25 @@ def _copy_sidecar(src: Path, dest: Path) -> None:
     textures = src.parent / "textures"
     if textures.is_dir():
         shutil.copytree(textures, dest.parent / "textures", dirs_exist_ok=True)
+    _copy_local_layers(src, dest)
+
+
+def _copy_local_layers(src: Path, dest: Path) -> None:
+    """Copy ``@./file.usd@`` layers a text USDA payloads beside itself."""
+    try:
+        text = src.read_text(encoding="utf-8")
+    except UnicodeError:
+        return
+    if not text.startswith("#usda"):
+        return
+    for ref in re.findall(r"@(\./[^@\s]+)@", text):
+        child_src = (src.parent / ref).resolve()
+        child_dest = (dest.parent / ref).resolve()
+        if not child_src.is_file() or child_dest.exists():
+            continue
+        child_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(child_src, child_dest)
+        _copy_sidecar(child_src, child_dest)
 
 
 if __name__ == "__main__":

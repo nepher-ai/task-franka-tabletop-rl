@@ -208,16 +208,34 @@ class ClassicalTabletopPlanner:
 
     # ------------------------------------------------------------------ geometry
 
+    def _anchor(self, slot: str, index: int):
+        """A task anchor is a published pose, not a spawned body."""
+        placement = self.tracker.env_layouts[index].by_slot().get(slot)
+        if placement is None or placement.asset.kind != "anchor":
+            return None
+        return placement
+
     def _pose(self, slot: str, index: int) -> tuple[np.ndarray, np.ndarray]:
+        anchor = self._anchor(slot, index)
+        if anchor is not None:
+            pos = np.asarray(anchor.position_m, dtype=np.float64)
+            quat = np.asarray(anchor.quat_wxyz, dtype=np.float64)
+            return pos, quat_wxyz_to_matrix(quat)
         root_pos, root_quat = self.tracker.root(index, slot)
         x, y, z, w = root_quat.astype(np.float64)
         return root_pos.astype(np.float64), quat_wxyz_to_matrix(np.array([w, x, y, z]))
 
     def _top_z(self, slot: str, index: int) -> float:
+        anchor = self._anchor(slot, index)
+        if anchor is not None:
+            return float(anchor.position_m[2] + anchor.asset.size_m[2] / 2)
         pos, rot = self._pose(slot, index)
         return float((self.points[self._task(index)][slot][::3] @ rot.T)[:, 2].max() + pos[2])
 
     def _bottom_z(self, slot: str, index: int) -> float:
+        anchor = self._anchor(slot, index)
+        if anchor is not None:
+            return float(anchor.position_m[2] - anchor.asset.size_m[2] / 2)
         pos, rot = self._pose(slot, index)
         return float((self.points[self._task(index)][slot][::3] @ rot.T)[:, 2].min() + pos[2])
 
