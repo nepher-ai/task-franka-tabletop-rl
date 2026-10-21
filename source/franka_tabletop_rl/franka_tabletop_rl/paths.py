@@ -12,6 +12,11 @@ import shutil
 from pathlib import Path
 
 
+def packaged_asset(*parts: str) -> str:
+    """Absolute path of a file shipped under ``franka_tabletop_rl/assets``."""
+    return str(Path(__file__).resolve().parent.joinpath("assets", *parts))
+
+
 def project_root() -> Path:
     """``task-franka-tabletop-rl`` directory."""
     return Path(__file__).resolve().parents[3]

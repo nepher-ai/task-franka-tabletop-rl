@@ -52,9 +52,22 @@ class TabletopRLEvalEnv:
     def instructions(self) -> list[str]:
         """Instruction text of each env's task."""
         tracker = self._tracker
-        return [tracker.instruction(index) for index in range(tracker.count)]
+        return [tracker.instruction(index) for index in range(tracker.num_envs)]
+
+    def episode_task_ids(self) -> list[str]:
+        """Task id of the episode each env just finished."""
+        return list(self._tracker.last_task_ids)
+
+    def episode_finished(self):
+        """Envs holding for a background barrier, or ``None`` when each env resets on its own."""
+        return self._tracker.episode_finished()
+
+    def episode_steps(self):
+        """Steps each env had run when it finished. ``-1`` means it has not finished."""
+        return self._tracker.episode_steps()
 
     def reset(self, *args, **kwargs):
+        self._tracker.prepare_reset()
         result = self._env.reset(*args, **kwargs)
         self._tracker.clear_outcomes()
         return result

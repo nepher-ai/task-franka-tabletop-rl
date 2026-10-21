@@ -11,8 +11,6 @@ import numpy as np
 
 from .spec import Check, Goal, TabletopTaskSpec
 
-_KINDS = ("item_in_container", "item_on_side", "stacked", "sorted_one", "both_in_container")
-
 
 def inside(
     item_pos: np.ndarray,
@@ -141,7 +139,7 @@ def _fraction_inside(item: dict, container: dict) -> float:
     return float(np.mean(mask))
 
 
-def _latch_key(goal: Goal) -> str:
+def latch_key(goal: Goal) -> str:
     """Identity of one stage. Two checks on the same object must not share a latch."""
     return f"{goal.op}:{goal.slot}:{goal.target}"
 
@@ -160,95 +158,6 @@ def all_of(*masks: np.ndarray) -> np.ndarray:
     for mask in masks:
         result = result & np.asarray(mask, dtype=bool)
     return result
-
-
-def any_of(*masks: np.ndarray) -> np.ndarray:
-    """Elementwise disjunction."""
-    result = np.zeros_like(np.asarray(masks[0]), dtype=bool)
-    for mask in masks:
-        result = result | np.asarray(mask, dtype=bool)
-    return result
-
-
-def evaluate(spec: TabletopTaskSpec, poses: dict[str, dict[str, np.ndarray]], side: str | None = None) -> np.ndarray:
-    """Evaluate ``spec.success`` for a batch of poses.
-
-    Args:
-        spec: Family spec or benchmark expression. Roles name the keys of ``poses``.
-        poses: ``slot -> {"pos": [N, 3], "quat": [N, 4], "half": [3]}``.
-        side: Overrides ``spec.side`` for ``place_relative``.
-    """
-    if spec.check is not None and spec.success not in _KINDS:
-        return np.asarray([_geometry(spec.check, poses, side or spec.side)])
-    kind = spec.success
-    if kind == "item_in_container":
-        item = poses[spec.roles["item"]]
-        box = poses[spec.roles["container"]]
-        return inside(item["pos"], box["pos"], box["half"], box.get("quat"))
-    if kind == "item_on_side":
-        item = poses[spec.roles["item"]]
-        reference = poses[spec.roles["reference"]]
-        return relative_side(item["pos"], reference["pos"], side or spec.side)
-    if kind == "stacked":
-        top = poses[spec.roles["top"]]
-        support = poses[spec.roles["support"]]
-        return all_of(on_top_of(top["pos"], support["pos"], 0.04, 0.12), upright(top["quat"]))
-    if kind == "sorted_one":
-        keep = poses[spec.roles["keep"]]
-        leave = poses[spec.roles["leave"]]
-        box = poses[spec.roles["container"]]
-        return all_of(
-            inside(keep["pos"], box["pos"], box["half"], box.get("quat")),
-            ~inside(leave["pos"], box["pos"], box["half"], box.get("quat")),
-        )
-    if kind == "both_in_container":
-        first = poses[spec.roles["first"]]
-        second = poses[spec.roles["second"]]
-        box = poses[spec.roles["container"]]
-        return all_of(
-            inside(first["pos"], box["pos"], box["half"], box.get("quat")),
-            inside(second["pos"], box["pos"], box["half"], box.get("quat")),
-        )
-    raise KeyError(f"unknown success predicate {kind!r}")
-
-
-def required_grasp_slots(spec: TabletopTaskSpec) -> tuple[str, ...]:
-    """Slots the gripper must have held before the geometric condition counts."""
-    if spec.check is not None:
-        return spec.check.grasp
-    roles = spec.roles
-    if spec.success == "both_in_container":
-        return (roles["first"], roles["second"])
-    if spec.success == "stacked":
-        return (roles["top"],)
-    if spec.success == "sorted_one":
-        return (roles["keep"],)
-    if spec.success in ("item_in_container", "item_on_side"):
-        return (roles["item"],)
-    return ()
-
-
-def terminal_success(
-    spec: TabletopTaskSpec,
-    poses: dict[str, dict[str, np.ndarray]],
-    held: dict[str, bool],
-    in_contact: dict[str, bool],
-    side: str | None = None,
-    *,
-    gripper_open: bool = True,
-) -> bool:
-    """True when the geometry holds, each required object was grasped, and the gripper has opened.
-
-    ``held`` is sticky. ``in_contact`` is the contact at this step. ``gripper_open`` is the
-    finger joint on the open side of the 0.5 snap. A closed gripper does not count as a
-    release when the contact report drops for one step.
-    """
-    if spec.check is not None:
-        score, _, _ = task_progress(spec, poses, held, in_contact, {}, [], side=side, gripper_open=gripper_open)
-        return score >= 1.0 - 1e-9
-    if not bool(np.asarray(evaluate(spec, poses, side=side)).reshape(-1)[0]):
-        return False
-    return all(_let_go(slot, held, in_contact, gripper_open) for slot in required_grasp_slots(spec))
 
 
 def task_progress(
@@ -273,9 +182,7 @@ def task_progress(
     """
     chosen = side or spec.side
     if spec.check is None:
-        done = bool(np.asarray(evaluate(spec, poses, side=chosen)).reshape(-1)[0])
-        released = all(_let_go(slot, held, in_contact, gripper_open) for slot in required_grasp_slots(spec))
-        return (1.0 if done and released else 0.0), dict(latched), list(entered)
+        return 0.0, dict(latched), list(entered)
     kept = dict(latched)
     sequence = list(entered)
     score = _score(
@@ -369,7 +276,7 @@ def _credit(
             return 0.0
         # A pickup stays successful only while the gripper is still closed on the object.
         return 1.0 if held.get(goal.slot, False) and in_contact.get(goal.slot, False) else 0.0
-    key = _latch_key(goal)
+    key = latch_key(goal)
     if latched.get(key):
         # Taking an object out has to stay clear, with the gripper still open. Other stages keep credit.
         released = goal.slot not in grasp or _let_go(goal.slot, held, in_contact, gripper_open)

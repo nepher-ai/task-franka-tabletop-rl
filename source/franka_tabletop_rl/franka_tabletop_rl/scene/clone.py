@@ -10,17 +10,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from ..scenes.mixed import MixedPlan, explicit_worlds
+from franka_tabletop_rl.benchmark.stage_plan import StagePlan, explicit_worlds
 
 
 @contextmanager
-def planned_worlds(plan: MixedPlan) -> Iterator[None]:
+def planned_worlds(plan: StagePlan) -> Iterator[None]:
     """Make the scene build the worlds of ``plan`` while its envs are constructed.
 
-    :class:`~isaaclab.scene.InteractiveScene` asks the cloner for the legal combinations
-    of scene assets. For positions with a different mesh in every env, that is the product
-    of all variant counts. This swaps in :func:`explicit_worlds` for the duration of the
-    ``with`` block and restores the cloner afterwards, also when construction fails.
+    The cloner would otherwise enumerate every combination of variants. This swaps in the
+    ``num_envs`` worlds the plan names, and restores the cloner afterwards.
     """
     from isaaclab import cloner
 

@@ -21,7 +21,7 @@ import torch
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 from isaaclab.utils import index_fill_
 
-from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD
+from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
 
 from .ik_joint_action_cfg import IkJointCommandActionCfg
 

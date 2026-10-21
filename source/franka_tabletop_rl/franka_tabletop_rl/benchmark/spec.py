@@ -3,20 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Task specification. A family names object roles and a success predicate."""
+"""Success expression of one benchmark task."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
 _MOVED = ("in_container", "on_side", "on_top", "stacked", "lifted", "centered")
-_SHORT = {
-    "item_in_container": ("in_container", ("item",), "container"),
-    "item_on_side": ("on_side", ("item",), "reference"),
-    "stacked": ("stacked", ("top",), "support"),
-    "sorted_one": None,
-    "both_in_container": ("in_container", ("first", "second"), "container"),
-}
 
 
 @dataclass(frozen=True)
@@ -64,16 +57,16 @@ class Check:
 
 @dataclass(frozen=True)
 class TabletopTaskSpec:
-    """One manipulation family or one benchmark expression.
+    """One benchmark success expression.
 
     Attributes:
-        task_id: Stable family id, or the authored task id.
-        roles: Role name to scene slot. Local play families use this mapping.
-        success: Short-form predicate name, or the expression op.
-        failure: Predicate name. Empty means no failure besides the time limit.
-        time_limit_s: Unused by the evaluator. Episode time comes from the eval config.
-        side: Used by ``place_relative``. One of left, right, front, behind.
-        check: Expression the evaluator scores. Local play families leave this empty.
+        task_id: Authored task id.
+        roles: Slot name to itself, kept so instruction helpers can name objects.
+        success: Expression op.
+        failure: Unused. Episode failure is an object leaving the table.
+        time_limit_s: Episode budget [s]. The evaluator may override it.
+        side: Default side for ``on_side``. One of left, right, front, behind.
+        check: Expression the evaluator scores.
     """
 
     task_id: str
@@ -85,66 +78,24 @@ class TabletopTaskSpec:
     check: Check | None = None
 
 
-FAMILIES: dict[str, TabletopTaskSpec] = {
-    "place_in_container": TabletopTaskSpec(
-        task_id="place_in_container",
-        roles={"item": "item_a", "container": "container"},
-        success="item_in_container",
-        failure="",
-        time_limit_s=40.0,
-    ),
-    "place_relative": TabletopTaskSpec(
-        task_id="place_relative",
-        roles={"item": "item_a", "reference": "reference"},
-        success="item_on_side",
-        failure="",
-        time_limit_s=40.0,
-        side="left",
-    ),
-    "stack_on": TabletopTaskSpec(
-        task_id="stack_on",
-        roles={"top": "item_a", "support": "item_b"},
-        success="stacked",
-        failure="",
-        time_limit_s=40.0,
-    ),
-    "sort_by_attribute": TabletopTaskSpec(
-        task_id="sort_by_attribute",
-        roles={"keep": "item_a", "leave": "item_b", "container": "container"},
-        success="sorted_one",
-        failure="",
-        time_limit_s=50.0,
-    ),
-    "multi_place": TabletopTaskSpec(
-        task_id="multi_place",
-        roles={"first": "item_a", "second": "item_b", "container": "container"},
-        success="both_in_container",
-        failure="",
-        time_limit_s=60.0,
-    ),
-}
-
-
 def spec_from_success(
     task_id: str,
     success: dict,
     time_limit_s: float,
     name_to_slot: dict[str, str],
 ) -> TabletopTaskSpec:
-    """Build a spec from a scene success block.
+    """Build a spec from a task success block.
 
-    The short form is ``kind`` plus ``roles`` of object names. The general form is an
-    ``op`` with an object name or a list of names. ``require_grasp`` overrides the
+    The block is an ``op`` with an object name or a list of names. ``require_grasp`` overrides the
     objects that must be grasped and released.
+
+    Raises:
+        ValueError: The block is the old short ``kind`` form, which this project does not load.
     """
-    side = str(success.get("side", "left"))
     if "kind" in success and "op" not in success and "checks" not in success:
-        check, roles = _short_form(success, name_to_slot, side)
-        label = str(success["kind"])
-    else:
-        check = _parse(success, name_to_slot, side)
-        roles = _role_map(check)
-        label = str(success.get("op", success.get("kind", "")))
+        raise ValueError(f"task {task_id} uses a short-form success kind; write it as an op")
+    side = str(success.get("side", "left"))
+    check = _parse(success, name_to_slot, side)
     if "require_grasp" in success:
         grasp = _named(success["require_grasp"], name_to_slot)
     else:
@@ -152,8 +103,8 @@ def spec_from_success(
     hold = _named(success["hold"], name_to_slot) if "hold" in success else ()
     return TabletopTaskSpec(
         task_id=task_id,
-        roles=roles,
-        success=label,
+        roles=_role_map(check),
+        success=str(success.get("op", "")),
         failure="",
         time_limit_s=float(time_limit_s),
         side=side,
@@ -161,29 +112,8 @@ def spec_from_success(
     )
 
 
-def _short_form(success: dict, name_to_slot: dict[str, str], side: str) -> tuple[Check, dict[str, str]]:
-    kind = str(success["kind"])
-    roles = {}
-    for role, name in success["roles"].items():
-        if not isinstance(name, str) or name not in name_to_slot:
-            raise KeyError(f"success role {role} names {name!r}, which the scene does not place")
-        roles[str(role)] = name_to_slot[name]
-    if kind == "sorted_one":
-        goals = (
-            Goal(roles["keep"], "in_container", roles["container"], side),
-            Goal(roles["leave"], "outside", roles["container"], side),
-        )
-        return Check(logical="all", goals=goals), roles
-    spec = _SHORT.get(kind)
-    if spec is None:
-        raise KeyError(f"unknown success predicate {kind!r}")
-    op, role_names, target_role = spec
-    goals = tuple(Goal(roles[role], op, roles[target_role], side) for role in role_names)
-    return Check(logical="all", goals=goals), roles
-
-
 def _parse(block: dict, name_to_slot: dict[str, str], side: str) -> Check:
-    op = str(block.get("op") or block.get("kind") or "")
+    op = str(block.get("op") or "")
     side = str(block.get("side", side))
     if op in ("all", "any", "choose") and "checks" in block:
         children = tuple(_parse(child, name_to_slot, side) for child in block["checks"])
@@ -232,7 +162,7 @@ def _slots(value, name_to_slot: dict[str, str]) -> tuple[str, ...]:
     slots = []
     for name in names:
         if name not in name_to_slot:
-            raise KeyError(f"success names {name!r}, which the scene does not place")
+            raise KeyError(f"success names {name!r}, which the task does not place")
         slots.append(name_to_slot[str(name)])
     if not slots:
         raise ValueError("success names no objects")
@@ -259,12 +189,3 @@ def _role_map(check: Check) -> dict[str, str]:
         for role, slot in _role_map(child).items():
             roles.setdefault(role, slot)
     return roles
-
-
-def get_family(task_id: str) -> TabletopTaskSpec:
-    """Return the family spec."""
-    try:
-        return FAMILIES[task_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(FAMILIES))
-        raise KeyError(f"unknown task family {task_id!r}. Known: {known}") from exc

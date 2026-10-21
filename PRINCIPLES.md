@@ -37,8 +37,6 @@ Policy structure may differ from `task-franka-tabletop`. The scene those policie
 
 ## EnvHub and eval-nav
 
-`envhub/environments/franka-tabletop-v0` was built for the brain-runtime paradigm. It is adapted for `task-franka-tabletop-rl` and renamed to `franka-tabletop-rl-v0`.
+This project owns `franka-tabletop-rl-v0` (the original 16 tasks) and `franka-tabletop-rl-v1` (all 120 tasks, derived from the `franka-tabletop-v13` data). Both are local EnvHub bundles. The brain-runtime bundles `franka-tabletop-v11` through `franka-tabletop-v13`, and their eval-nav configs, stay untouched.
 
-`eval-nav/configs/task-franka-tabletop-v0.yaml` is updated for this project and renamed to `task-franka-tabletop-rl.yaml`.
-
-`franka-tabletop-v11`, `franka-tabletop-v12`, and `franka-tabletop-v13`, and their eval-nav configs `task-franka-tabletop-v11.yaml`, `task-franka-tabletop-v12.yaml`, and `task-franka-tabletop-v13.yaml`, stay as they are. Those versions belong to the brain-runtime paradigm and are out of scope for this project.
+`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates v0. `eval-nav/configs/task-franka-tabletop-rl-v1.yaml` evaluates v1.

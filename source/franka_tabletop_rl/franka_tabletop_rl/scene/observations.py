@@ -17,7 +17,6 @@ import torch
 
 from isaaclab.utils.math import convert_quat, quat_mul, subtract_frame_transforms
 
-from .observation_spec import OBSERVATION_CAMERAS
 from .robot import ARM_JOINTS, GRIPPER_CLOSED_RAD
 
 # Tool-frame offset in the simulator order (x, y, z, w). The observation stores wxyz.
@@ -71,21 +70,6 @@ def resize_rgb(image: torch.Tensor, size: tuple[int, int] | None) -> torch.Tenso
     planes = image.permute(0, 3, 1, 2).to(dtype=torch.float32)
     planes = torch.nn.functional.interpolate(planes, size=size, mode="bilinear", antialias=True, align_corners=False)
     return planes.round().clamp_(0, 255).to(dtype=torch.uint8).permute(0, 2, 3, 1).contiguous()
-
-
-def pack_numpy(env) -> dict:
-    """The observation dict the lockstep loop sends to a brain.
-
-    Only the cameras the brain declared are read, and they are resized on the GPU
-    before the copy to the host when it declared an image size.
-    """
-    cameras = getattr(env.cfg, "observation_cameras", OBSERVATION_CAMERAS)
-    size = getattr(env.cfg, "observation_image_hw", None)
-    packed = {name: resize_rgb(camera_rgb(env, name), size).detach().cpu().numpy() for name in cameras}
-    packed["joint_pos"] = joint_pos(env).detach().cpu().numpy()
-    packed["gripper_pos"] = gripper_pos(env).detach().cpu().numpy()
-    packed["eef_pose"] = eef_pose(env).detach().cpu().numpy()
-    return packed
 
 
 def _joint_indexes(robot, names: list[str]) -> list[int]:

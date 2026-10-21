@@ -26,10 +26,10 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 
+from franka_tabletop_rl.benchmark.bundle import resolve_bundle
 from franka_tabletop_rl.frames import EE_BODY, TCP_OFFSET_B
-from franka_tabletop_rl.tabletop.bundle_path import resolve_bundle
-from franka_tabletop_rl.tabletop.core.robot import ARM_JOINTS
-from franka_tabletop_rl.tabletop.scene_cfg import TabletopSceneCfg, apply_stage_assets, apply_tabletop_physics
+from franka_tabletop_rl.scene.robot import ARM_JOINTS
+from franka_tabletop_rl.scene.scene_cfg import TabletopSceneCfg, apply_stage_assets, apply_tabletop_physics
 
 from . import mdp
 

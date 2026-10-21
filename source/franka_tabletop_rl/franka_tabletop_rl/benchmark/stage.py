@@ -5,19 +5,14 @@
 
 """Read the scene declaration shipped inside a benchmark bundle.
 
-The task does not choose the office, the table, or the object meshes. The bundle's
 ``assets/stage.json`` lists the backgrounds and the work surfaces, and names the
-mount under the arm. ``assets/catalog.json`` names every mesh the benchmark may
-place. A scene file picks one background and one surface, and names the objects,
-their bounds, and their poses for one episode.
+mount under the arm. A task file picks one background and one surface.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-
-from .catalog import ObjectAsset
 
 
 def read_stage(bundle: str | Path) -> dict:
@@ -124,37 +119,7 @@ def _select(records: list[dict], name: str | None, kind: str) -> dict:
     raise KeyError(f"benchmark has no {kind} {name!r}. Known: {known}")
 
 
-def read_catalog(bundle: str | Path) -> dict[str, ObjectAsset]:
-    """Return the meshes a benchmark is willing to place, keyed by name.
-
-    Raises:
-        FileNotFoundError: The bundle has no ``assets/catalog.json``.
-        ValueError: The file lists no objects, or a record is missing its kind.
-    """
-    path = Path(bundle) / "assets" / "catalog.json"
-    if not path.is_file():
-        raise FileNotFoundError(f"benchmark must declare assets/catalog.json under {bundle}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    records = payload.get("objects") if isinstance(payload, dict) else payload
-    if not records:
-        raise ValueError("assets/catalog.json lists no objects")
-    catalog: dict[str, ObjectAsset] = {}
-    for record in records:
-        if "kind" not in record:
-            raise ValueError(f"catalog object {record.get('name', '')!r} is missing kind")
-        asset = asset_from_record(record)
-        catalog[asset.name] = asset
-    return catalog
-
-
-def asset_from_record(record: dict) -> ObjectAsset:
-    """Build an object from a catalog or scene record."""
-    try:
-        name = str(record["name"])
-        usd = str(record["usd"])
-        size = tuple(float(value) for value in record["size_m"])
-    except KeyError as exc:
-        raise KeyError(f"placement is missing {exc.args[0]}") from exc
-    if len(size) != 3:
-        raise ValueError(f"size_m for {name} must have 3 values")
-    return ObjectAsset(name=name, size_m=size, kind=str(record.get("kind", "item")), usd=usd)
+def choice(payload: dict, key: str) -> str | None:
+    """String override on a task file. Absent or non-text means the stage default."""
+    value = payload.get(key)
+    return value if isinstance(value, str) else None

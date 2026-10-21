@@ -20,16 +20,12 @@ import numpy as np
 PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
 sys.path.insert(0, str(PACKAGE))
 
-from franka_tabletop_rl.tabletop.scenes.catalog import ObjectAsset  # noqa: E402
-from franka_tabletop_rl.tabletop.scenes.composer import Placement, SceneInstance  # noqa: E402
-from franka_tabletop_rl.tabletop.spec import spec_from_success  # noqa: E402
-from franka_tabletop_rl.tasks.hl_policy.classical_planner import (  # noqa: E402
-    ClassicalTabletopPlanner,
-    Stage,
-    drop_offsets,
-    reach_limit,
-)
-from franka_tabletop_rl.tasks.hl_policy.grasp import (  # noqa: E402
+import pytest  # noqa: E402
+
+from franka_tabletop_rl.benchmark.spec import spec_from_success  # noqa: E402
+from franka_tabletop_rl.benchmark.task import ObjectAsset, Placement, TaskLayout  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.planner.goals import compile_goals  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.planner.grasp import (  # noqa: E402
     MAX_WIDTH_M,
     PALM_CLEARANCE_M,
     TOOL_Z_MIN_M,
@@ -76,7 +72,20 @@ def test_tall_object_is_gripped_above_its_middle_and_clear_of_the_table():
     assert height > 0.003 + 0.051
 
 
+def _machine():
+    pytest.importorskip("isaaclab")
+    from franka_tabletop_rl.tasks.hl_policy.planner.machine import (
+        ClassicalTabletopPlanner,
+        Stage,
+        drop_offsets,
+        reach_limit,
+    )
+
+    return ClassicalTabletopPlanner, Stage, drop_offsets, reach_limit
+
+
 def test_reach_limit_pulls_far_and_near_targets_into_the_arm_s_workspace():
+    _, _, _, reach_limit = _machine()
     far = reach_limit(np.array([0.7, 0.5]), 0.24)
     assert np.hypot(*far) <= 0.77
     assert reach_limit(np.array([0.2, 0.0]), 0.24)[0] >= 0.38
@@ -117,6 +126,7 @@ def test_tool_yaw_is_a_half_turn_symmetric_angle():
 
 
 def test_drop_offsets_stay_inside_the_footprint_and_do_not_repeat():
+    _, _, drop_offsets, _ = _machine()
     assert drop_offsets(1, 0.2, 0.1) == [(0.0, 0.0)]
     offsets = drop_offsets(6, 0.21, 0.14)
     assert len(set(offsets)) == 6
@@ -126,7 +136,7 @@ def test_drop_offsets_stay_inside_the_footprint_and_do_not_repeat():
 class _Sim:
     """Perfect tracker and gripper: the tool reaches its target, a closed gripper carries what it holds."""
 
-    def __init__(self, planner: ClassicalTabletopPlanner, tracker, size):
+    def __init__(self, planner, tracker, size):
         self.planner, self.tracker, self.size = planner, tracker, size
         self.tcp = np.array([0.45, 0.0, 0.26])
         self.closure = 0.0
@@ -166,18 +176,18 @@ def _fixture():
         "require_grasp": ["cube"],
     }
     spec = spec_from_success("t", success, 40.0, {"cube": "item", "bin": "container"})
-    scene = SceneInstance("", "t", 0, 0.0, 5000.0, (1.0, 1.0, 1.0), placements, spec=spec)
+    scene = TaskLayout("t", "lay", "office", "oak", "put the cube in the bin", placements, spec=spec)
     roots = {
         "item": (np.array([[0.55, -0.2, 0.0235]]), np.array([[0.0, 0.0, 0.0, 1.0]])),
         "container": (np.array([[0.5, 0.25, 0.05]]), np.array([[0.0, 0.0, 0.0, 1.0]])),
     }
     contact = {"item": np.zeros(1, dtype=bool), "container": np.zeros(1, dtype=bool)}
     tracker = SimpleNamespace(
-        count=1,
+        num_envs=1,
         task_ids=("t",),
         task_index=np.zeros(1, dtype=int),
         specs=(spec,),
-        published=(scene,),
+        task_layouts=(scene,),
         roots=roots,
         contact=contact,
         latched=[{}],
@@ -196,7 +206,38 @@ def _fixture():
     return tracker, [points], [rest]
 
 
+def test_goal_queue_covers_each_op_and_leaves_upright_unsupported():
+    names = {"cube": "item", "bin": "container", "plate": "plate"}
+    positions = {"item": (0.5, 0.0), "container": (0.6, 0.2), "plate": (0.9, 0.4)}
+
+    def queue(success):
+        spec = spec_from_success("t", success, 40.0, names)
+        return compile_goals(spec.check, positions)
+
+    placed = queue({"op": "on_top", "object": "cube", "support": "plate"})
+    assert placed.supported and placed.goals[0].op == "on_top" and placed.goals[0].slot == "item"
+    held = queue({"op": "picked", "object": "cube"})
+    assert held.goals[0].op == "picked"
+    ordered = queue({"op": "in_order", "objects": ["plate", "cube"], "container": "bin"})
+    assert ordered.ordered and [goal.slot for goal in ordered.goals] == ["plate", "item"]
+    either = queue(
+        {
+            "op": "any",
+            "checks": [
+                {"op": "in_container", "object": "plate", "container": "bin"},
+                {"op": "in_container", "object": "cube", "container": "bin"},
+            ],
+        }
+    )
+    assert [goal.slot for goal in either.goals] == ["item"]
+    chosen = queue({"op": "choose", "k": 1, "objects": ["plate", "cube"], "container": "bin"})
+    assert [goal.slot for goal in chosen.goals] == ["item"]
+    upright = queue({"op": "upright", "object": "cube"})
+    assert not upright.supported and upright.goals == ()
+
+
 def test_planner_carries_the_item_over_the_container_and_lets_go():
+    ClassicalTabletopPlanner, Stage, _, _ = _machine()
     tracker, points, rest = _fixture()
     planner = ClassicalTabletopPlanner(tracker, points, rest)
     planner.reset([0])

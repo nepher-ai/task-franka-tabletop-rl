@@ -60,11 +60,11 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from franka_tabletop_rl.data.lerobot_writer import LeRobotWriter  # noqa: E402
 from franka_tabletop_rl.paths import sync_best_policy  # noqa: E402
-from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS, selected_cameras  # noqa: E402
-from franka_tabletop_rl.tabletop.core.observations import camera_rgb, eef_pose, gripper_pos, joint_pos, resize_rgb  # noqa: E402
-from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD  # noqa: E402
+from franka_tabletop_rl.benchmark.bundle import ALL_TASKS  # noqa: E402
+from franka_tabletop_rl.scene.cameras import OBSERVATION_CAMERAS, selected_cameras  # noqa: E402
+from franka_tabletop_rl.scene.observations import camera_rgb, eef_pose, gripper_pos, joint_pos, resize_rgb  # noqa: E402
+from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD  # noqa: E402
 from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY  # noqa: E402
-from franka_tabletop_rl.tasks.hl_policy.task_state import ALL_TASKS  # noqa: E402
 
 from isaaclab_rl.rsl_rl import (  # noqa: E402
     RslRlVecEnvWrapper,
@@ -97,7 +97,7 @@ def main() -> None:
     # A bare ``--cameras`` is an empty list and means every camera. Omitting the flag is None.
     cameras = OBSERVATION_CAMERAS if args_cli.cameras == [] else selected_cameras(args_cli.cameras)
     cfg = HLEnvCfg_PLAY(
-        scene_id=args_cli.task or ALL_TASKS,
+        task_id=args_cli.task or ALL_TASKS,
         pose_jitter_m=args_cli.jitter,
         cameras=cameras,
         layout_seed=args_cli.seed,
@@ -143,7 +143,8 @@ def main() -> None:
             if not done_h[index]:
                 continue
             tried += 1
-            task_id = tracker.task_id_of(index)
+            task_id = tracker.last_task_ids[index]
+            instruction = next(layout.instruction for layout in tracker.task_layouts if layout.task_id == task_id)
             success = bool(tracker.last_success[index])
             success_count += int(success)
             if saved[task_id] < args_cli.episodes and (success or args_cli.keep_failed):
@@ -151,7 +152,7 @@ def main() -> None:
                     np.stack(buffer["state"]),
                     np.stack(buffer["action"]),
                     np.stack(buffer["eef"]),
-                    task=tracker.instruction(index),
+                    task=instruction,
                     frames={name: np.stack(buffer[name]) for name in cameras},
                     extra={
                         "success": success,

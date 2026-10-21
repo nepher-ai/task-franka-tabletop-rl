@@ -9,23 +9,27 @@ from __future__ import annotations
 
 from typing import Any
 
-# Gym registration. No Isaac Lab import happens at package load.
+# Gym registration. Importing the package loads the task entry points.
 from . import tasks  # noqa: F401
 
 __version__ = "0.1.0"
 
 
 def __getattr__(name: str) -> Any:
-    """Lazy export used by eval-nav through ``task_module``."""
+    """Lazy export used by eval-nav through ``task_module``.
+
+    ``task_ids_of`` does not import Isaac Lab. ``wrap_for_eval`` does, because the wrapper
+    reads tensors from a live environment.
+    """
     if name == "wrap_for_eval":
         from .tasks.hl_policy.eval_compat import wrap_for_eval
 
         return wrap_for_eval
-    if name == "tasks_of_scene":
-        from .tasks.hl_policy.task_state import tasks_of_scene
+    if name == "task_ids_of":
+        from .benchmark.bundle import task_ids_of
 
-        return tasks_of_scene
+        return task_ids_of
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["tasks", "tasks_of_scene", "wrap_for_eval"]
+__all__ = ["task_ids_of", "tasks", "wrap_for_eval"]

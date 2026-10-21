@@ -8,4 +8,4 @@
 from ...ll_policy.mdp import *  # noqa: F401, F403
 from .commands import HLGripCommand, HLGripCommandCfg, HLPoseCommand, HLPoseCommandCfg
 from .events import reset_tabletop_layout
-from .terminations import object_lost, task_success
+from .terminations import episode_timeout, object_lost, phase_barrier, task_success

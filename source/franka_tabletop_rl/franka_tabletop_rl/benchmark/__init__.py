@@ -3,6 +3,4 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Franka tabletop benchmark."""
-
-__version__ = "0.1.0"
+"""Benchmark data: task files, success predicates, and the stage plan. No Isaac Lab import."""

@@ -27,8 +27,8 @@ from isaaclab.utils import configclass
 from isaaclab_tasks.utils import PresetCfg
 
 from franka_tabletop_rl.paths import play_video_dir
-from franka_tabletop_rl.tabletop.core import sensors
-from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS
+from franka_tabletop_rl.scene import sensors
+from franka_tabletop_rl.scene.cameras import OBSERVATION_CAMERAS
 
 HIGHLIGHT_COUNT = 16
 GRID = 4

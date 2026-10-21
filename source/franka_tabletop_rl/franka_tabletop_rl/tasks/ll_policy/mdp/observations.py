@@ -15,7 +15,7 @@ import isaaclab.utils.math as math_utils
 from isaaclab.managers import SceneEntityCfg
 
 from franka_tabletop_rl.frames import tcp_pose_b
-from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD
+from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv

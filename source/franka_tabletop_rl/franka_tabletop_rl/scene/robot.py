@@ -11,11 +11,9 @@ import math
 
 from isaaclab_physx.sim.schemas import PhysxArticulationCfg
 
-import isaaclab.envs.mdp as mdp
-
 from isaaclab_assets.robots.franka import FRANKA_ROBOTIQ_GRIPPER_CFG
 
-from ..paths import packaged_asset
+from franka_tabletop_rl.paths import packaged_asset
 
 # Ready pose [rad]. The gripper is open at 0 and closed at pi/4.
 READY_JOINT_POS = {
@@ -34,7 +32,6 @@ READY_JOINT_POS = {
 GRIPPER_CLOSED_RAD = math.pi / 4
 
 ARM_JOINTS = [f"panda_joint{index}" for index in range(1, 8)]
-ACTION_JOINTS = ARM_JOINTS + ["finger_joint"]
 
 
 def franka_2f85(prim_path: str = "{ENV_REGEX_NS}/Robot"):
@@ -53,16 +50,6 @@ def franka_2f85(prim_path: str = "{ENV_REGEX_NS}/Robot"):
     )
     robot.actuators = _arm_drives(robot.actuators)
     return robot
-
-
-def joint_position_action() -> mdp.JointPositionActionCfg:
-    """8-D absolute joint targets [rad] plus the finger joint. Scale is 1 and there is no default offset."""
-    return mdp.JointPositionActionCfg(
-        asset_name="robot",
-        joint_names=ACTION_JOINTS,
-        scale=1.0,
-        use_default_offset=False,
-    )
 
 
 def with_position_iterations(robot, iterations: int):

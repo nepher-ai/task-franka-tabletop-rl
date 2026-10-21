@@ -6,11 +6,11 @@
 """Hierarchical environment: classical planner plus the learned tracker.
 
 Registered environments:
-  Nepher-FrankaTabletopRL-HL-Play-v0        every benchmark task in one stage (``scene_id="all"``)
-  Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0  the eval-nav entry, ``cfg_class(env_id=..., scene_id="all")``
+  Nepher-FrankaTabletopRL-HL-Play-v0        every benchmark task in one stage (``task_id="all"``)
+  Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0  the eval-nav entry, ``cfg_class(env_id=..., task_id="all")``
 
 Both load the tracker checkpoint of the low-level task as their policy, and the benchmark
-assets from the nepher cache of ``franka-tabletop-rl-v0``.
+assets from the nepher cache of the cfg's ``env_id`` (``franka-tabletop-rl-v1`` by default).
 """
 
 import gymnasium as gym
@@ -36,7 +36,7 @@ gym.register(
     entry_point=f"{__name__}.env:HLTabletopEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.hl_env_cfg_envhub:HLEnvCfg_Envhub_PLAY",
+        "env_cfg_entry_point": f"{__name__}.hl_env_cfg:HLEnvCfg_PLAY",
         "rsl_rl_cfg_entry_point": _PUBLISHED,
         "default_agent": "rsl_rl",
     },

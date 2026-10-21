@@ -15,7 +15,7 @@ import pytest
 PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
 sys.path.insert(0, str(PACKAGE))
 
-from franka_tabletop_rl.tabletop.core.observation_spec import (  # noqa: E402
+from franka_tabletop_rl.scene.cameras import (  # noqa: E402
     OBSERVATION_CAMERAS,
     requested_cameras,
     selected_cameras,

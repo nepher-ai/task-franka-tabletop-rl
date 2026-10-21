@@ -5,11 +5,10 @@
 
 """Hierarchical environment: a classical planner sets tool targets, the learned tracker follows them.
 
-The env is the benchmark tabletop (robot, physics, scenes, scoring) with the low-level tracker's
+The env is the benchmark tabletop (robot, physics, tasks, scoring) with the low-level tracker's
 observation and action. The planner is a command term, so the tracker checkpoint is the only policy
-that the evaluator loads. One stage holds every benchmark task: ``scene_id`` is ``"all"`` for all of
-them, or one task id, as eval-nav passes it. Env ``i`` runs task ``i % T``, so ``num_envs`` must be a
-multiple of the number of tasks ``T``.
+that the evaluator loads. One stage holds every selected task: ``task_id`` is ``"all"`` or one task
+id, as eval-nav passes it. Backgrounds run as phases of that one stage.
 """
 
 from __future__ import annotations
@@ -20,20 +19,14 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
 from isaaclab.visualizers.visualizer_cfg import VisualizerCfg
 
+from franka_tabletop_rl.benchmark.bundle import ALL_TASKS, DEFAULT_ENV_ID, load_benchmark, resolve_bundle
 from franka_tabletop_rl.frames import EE_BODY
-from franka_tabletop_rl.tabletop.bundle_path import DEFAULT_ENV_ID, resolve_bundle
-from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS, selected_cameras
-from franka_tabletop_rl.tabletop.scene_cfg import (
-    TabletopSceneCfg,
-    apply_stage_assets,
-    apply_tabletop_physics,
-    mount_mixed,
-)
+from franka_tabletop_rl.scene.cameras import OBSERVATION_CAMERAS, selected_cameras
+from franka_tabletop_rl.scene.scene_cfg import TabletopSceneCfg, apply_stage_assets, apply_tabletop_physics
 
 from ..ll_policy.ll_env_cfg import ActionsCfg, ObservationsCfg
 from . import mdp
 from .highlight import HighlightCfg, HighlightPreset, rendering_camera
-from .task_state import ALL_TASKS, resolve_tasks, task_payloads
 
 
 @configclass
@@ -58,7 +51,8 @@ class TerminationsCfg:
 
     success = DoneTerm(func=mdp.task_success)
     object_lost = DoneTerm(func=mdp.object_lost)
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    time_out = DoneTerm(func=mdp.episode_timeout, time_out=True)
+    phase_barrier = DoneTerm(func=mdp.phase_barrier)
 
 
 @configclass
@@ -72,9 +66,9 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
 
     Args:
         env_id: EnvHub id. Assets are loaded from that id's nepher cache.
-        scene_id: ``"all"`` for every task of the benchmark, or one task id (for example
-            ``cubes_and_blocks_in_bin``). Env ``i`` runs task ``i % T``, and ``scene.num_envs`` must be a
-            multiple of the number of tasks ``T``. It defaults to one env per task.
+        task_id: ``"all"`` for every task of the benchmark, or one task id (for example
+            ``cubes_and_blocks_in_bin``). ``scene.num_envs`` must be at least the largest background
+            group. It defaults to that size.
         pose_jitter_m: Per-episode shift [m] of each object in the table plane. Zero is the benchmark layout.
         cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
             stay either way, so a Kit window shows the benchmark stage.
@@ -91,18 +85,17 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
 
     env_id: str = DEFAULT_ENV_ID
-    scene_id: str = ALL_TASKS
+    task_id: str = ALL_TASKS
     pose_jitter_m: float = 0.0
     cameras: tuple[str, ...] = ()
     """Observation cameras to spawn. Empty spawns none."""
     layout_seed: int = 1
     highlight: HighlightPreset = HighlightPreset()
     task_ids: tuple[str, ...] = ()
-    """Tasks of the stage, filled from ``scene_id``."""
-    mixed_plan: object | None = None
-    """:class:`~franka_tabletop_rl.tabletop.scenes.mixed.MixedPlan` tiled to ``scene.num_envs`` envs.
-    :class:`HLTabletopEnv` fills it when it is built. It cannot be set here, because ``configclass`` rewrites
-    nested fields after ``__post_init__`` and the plan's records are frozen."""
+    """Tasks of the stage, filled from ``task_id``."""
+    stage_plan: object | None = None
+    """:class:`~franka_tabletop_rl.benchmark.stage_plan.StagePlan` for ``scene.num_envs`` envs.
+    :class:`HLTabletopEnv` fills it when the env is built, after eval-nav has set ``scene.num_envs``."""
 
     def __post_init__(self):
         apply_tabletop_physics(self)
@@ -110,12 +103,15 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.default_visualizer_cfg = VisualizerCfg(background_color=None)
         self.observations.policy.enable_corruption = False
         bundle = resolve_bundle(self.env_id)
-        self.task_ids = tuple(resolve_tasks(bundle, str(self.scene_id)))
-        payloads = task_payloads(bundle, self.task_ids)
-        stage = apply_stage_assets(self, bundle, payloads[0])
-        mount_mixed(self, bundle, stage, payloads)
-        # One env per task unless the caller asks for more copies.
-        self.scene.num_envs = len(self.task_ids)
+        benchmark = load_benchmark(bundle)
+        self.task_ids = benchmark.select(str(self.task_id))
+        # Bodies are mounted once num_envs is final. The dome starts on the first task's background.
+        apply_stage_assets(self, bundle, benchmark.stage, benchmark.task(self.task_ids[0]).background)
+        counts: dict[str, int] = {}
+        for task_id in self.task_ids:
+            name = benchmark.task(task_id).background
+            counts[name] = counts.get(name, 0) + 1
+        self.scene.num_envs = max(counts.values())
         keep = selected_cameras(self.cameras)
         self.cameras = keep
         for name in OBSERVATION_CAMERAS:
@@ -124,6 +120,7 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command = self.commands.ee_pose
         command.env_id = self.env_id
         command.task_ids = self.task_ids
+        command.body_name = EE_BODY
         command.pose_jitter_m = self.pose_jitter_m
         command.layout_seed = self.layout_seed
 

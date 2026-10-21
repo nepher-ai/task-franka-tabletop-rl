@@ -34,14 +34,17 @@ simulation_app = app_launcher.app
 
 """Rest everything follows."""
 
+import tempfile  # noqa: E402
+
 import numpy as np  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
 import torch  # noqa: E402
-import yaml  # noqa: E402
 from franka_tabletop.core.eval_env import TabletopEvalEnv  # noqa: E402
 from franka_tabletop.core.observations import gripper_pos, joint_pos  # noqa: E402
 from franka_tabletop.env_cfg import _apply_benchmark_assets, build_cfg  # noqa: E402
-from franka_tabletop_rl.tabletop.bundle_path import resolve_bundle  # noqa: E402
+from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle  # noqa: E402
+from franka_tabletop_rl.benchmark.legacy_layout import legacy_bundle_view  # noqa: E402
+from franka_tabletop_rl.data.lerobot_writer import CHUNK_SIZE, DATA_PATH  # noqa: E402
 
 import isaaclab_tasks  # noqa: E402, F401
 
@@ -51,18 +54,19 @@ def main() -> None:
         meta = [json.loads(line) for line in stream]
     info = next(entry for entry in meta if entry["episode_index"] == args_cli.episode)
     task_id = info["task_id"]
-    chunk = args_cli.episode // 1000
+    chunk = args_cli.episode // CHUNK_SIZE
     table = pq.read_table(
-        os.path.join(args_cli.dataset, "data", f"chunk-{chunk:03d}", f"episode_{args_cli.episode:06d}.parquet")
+        os.path.join(args_cli.dataset, DATA_PATH.format(episode_chunk=chunk, episode_index=args_cli.episode))
     ).to_pydict()
     actions = np.asarray(table["action"], dtype=np.float32)
     states = np.asarray(table["observation.state"], dtype=np.float32)
 
     bundle = resolve_bundle()
-    benchmark = yaml.safe_load((bundle / "benchmark.yaml").read_text(encoding="utf-8"))
-    scene = next(entry["scene"] for entry in benchmark["tasks"] if entry["task_id"] == task_id)
+    benchmark = load_benchmark(bundle)
+    scene = str(benchmark.record(task_id)["layout"])
+    view = legacy_bundle_view(bundle, tempfile.mkdtemp(prefix="tabletop-replay-"))
     cfg = build_cfg(task_id=task_id, scene=scene, num_envs=1, observation={"cameras": []})
-    cfg.bundle_path = str(bundle)
+    cfg.bundle_path = str(view)
     _apply_benchmark_assets(cfg)
     env = TabletopEvalEnv(cfg)
     env.reset()

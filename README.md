@@ -9,13 +9,15 @@ The project is not a brain runtime: there are no sockets or brain images.
 classical planner (hl_policy) -> learned end-effector tracker (ll_policy) -> damped-least-squares IK -> 8-D joint targets
 ```
 
-- **High level.** `ClassicalTabletopPlanner` picks each required object with a top-down grasp that it searches on the
-  object's mesh, carries it over the container, lets go, and retries a failed grasp. It reads the benchmark's own success
-  predicate, so it stops when the task is done.
+- **High level.** `ClassicalTabletopPlanner` picks each object a task asks to move, with a top-down grasp that it searches
+  on the object's mesh, carries it to the pose that satisfies that goal, lets go, and retries a failed grasp. A task that
+  must be left upright is left alone and scores 0. It reads the benchmark's own success predicate, so it stops when the
+  task is done.
 - **Low level.** An RSL-RL PPO policy tracks the planner's tool pose and gripper command. Its 7-D action is a tool-pose delta
   plus the gripper. `IkJointCommandAction` turns it into absolute joint targets, which is the action space of the brains.
-- **Scene identity.** `franka_tabletop_rl/tabletop/` is a vendored copy of the robot, physics, sensors, scenes, and success
-  predicates of `task-franka-tabletop`. `tests/test_parity.py` checks the copy against the original, so a recorded trajectory is valid training data for that benchmark.
+- **Scene identity.** The robot, physics, sensors, and success predicates come from `task-franka-tabletop` at commit
+  `4d64971`. They live in `franka_tabletop_rl/scene/` and `franka_tabletop_rl/benchmark/`. `tests/test_parity.py` checks
+  them against that project, so a recorded trajectory is valid training data for that benchmark.
 
 ## Gym tasks
 
@@ -25,15 +27,16 @@ classical planner (hl_policy) -> learned end-effector tracker (ll_policy) -> dam
 | `Nepher-FrankaTabletopRL-HL-Play-v0` | Planner plus tracker on every benchmark task in one stage. Loads the latest tracker checkpoint |
 | `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` | The same, built by eval-nav from an EnvHub bundle. Loads `best_policy/best_policy.pt` |
 
-Both high-level tasks load the benchmark from the nepher cache of `franka-tabletop-rl-v0`
-(`nepher download franka-tabletop-rl-v0`). That bundle has the 16 tasks of the tabletop benchmark.
+Both high-level tasks load the benchmark named by `env_id`. The default is `franka-tabletop-rl-v1`
+(`nepher download franka-tabletop-rl-v1`), the 120 tasks of `franka-tabletop-v13`. `franka-tabletop-rl-v0` is the same
+16 tasks as before, in the same file format.
 
-**One stage, all tasks.** The high-level env builds one stage with `T` tasks (16 here, read from `benchmark.yaml`, so 24 or 32
-work too). Env `i` runs task `i % T`, so `--num_envs` must be a multiple of `T`. Every env holds one body per object
-position (`obj<k>`, a multi-asset spawner that gives each task its own meshes) and a kinematic `surface`. Positions that a
-task does not use are parked away from the table. The layout code is the `mixed` scene machinery of `task-franka-tabletop`
-(`tabletop/scenes/mixed.py`, `tabletop/core/clone.py`), and `tabletop/tiling.py` repeats the `T` tasks over `num_envs` envs.
-Because every env owns its meshes, the cloner builds one world per env (`replicate_physics=False`), which costs build time.
+**One stage, all tasks.** The high-level env builds one stage for the selected tasks (`env.task_id=all`, or one task id).
+Tasks that share a background run together as one phase. `--num_envs` must be at least the largest background group
+(16 for v0, 44 for v1). With one background, env `i` runs task `i % T` and resets on its own. With several, a finished
+env holds until every env has finished; the dome then swaps, each env takes its next task, and they all reset. Objects
+the current phase does not use sit on a shelf outside the cameras. Because every env owns its meshes, the cloner builds
+one world per env (`replicate_physics=False`).
 
 `isaaclab.bat train` and `play` discover these through the `isaaclab.tasks` entry point.
 
@@ -52,13 +55,13 @@ The second line adds the LeRobot writer. TensorBoard logs are under this project
 ## Train and play
 
 Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a window. Playback runs until Ctrl+C.
-`--num_envs` for a high-level task must be a multiple of the task count. One task is `env.scene_id=<task_id>`.
+`--num_envs` for a high-level task must be at least the largest background group. One task is `env.task_id=<task_id>`.
 
 ```bat
 .\isaaclab.bat train --task Nepher-FrankaTabletopRL-LL-v0 --num_envs 4096 --max_iterations 1500 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-LL-Play-v0 --num_envs 64 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none
-.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 4 env.scene_id=throw_away_apple --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 4 env.task_id=throw_away_apple --viz none
 ```
 
 `Nepher-FrankaTabletopRL-LL-Play-v0` and `Nepher-FrankaTabletopRL-HL-Play-v0` load the latest `model_*.pt` under
@@ -70,7 +73,7 @@ Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a windo
 `env.highlight=on` on `Nepher-FrankaTabletopRL-HL-Play-v0` or `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` adds video
 recording and changes nothing else: the tasks, `--num_envs`, and layouts stay those of the same command. It writes
 `best_policy/videos/highlight/<camera>.mp4` for `cam_exterior_left`, `cam_exterior_right`, `cam_wrist`, and
-`cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one episode (`episode_length_s`, 40 s). The
+`cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one episode per background phase. The
 grid shows up to 16 tasks of the stage in benchmark order. A stage with more than 16 tasks shows 16 sampled with the
 seed. A stage with fewer leaves the remaining cells black. Only those envs are rendered, at the cell size.
 
@@ -82,7 +85,7 @@ seed. A stage with fewer leaves the remaining cells black. Only those envs are r
 
 `scripts/record_lerobot.py` runs the planner and the tracker, and keeps the successful episodes as a LeRobot v2.1 dataset
 (`--cameras` records every camera as h264 video, and `--cameras cam_wrist cam_front` records those). It records all tasks at once, or one with `--task <task_id>`.
-`--episodes` is the number of successful episodes kept per task, and `--num_envs` a multiple of the task count.
+`--episodes` is the number of successful episodes kept per task, and `--num_envs` at least the largest background group.
 It also copies the tracker it used to `best_policy/best_policy.pt`.
 
 ```bat
@@ -93,7 +96,7 @@ It also copies the tracker it used to `best_policy/best_policy.pt`.
 | Feature | Shape | Content |
 | --- | --- | --- |
 | `observation.state` | 8 | 7 joint positions [rad], gripper closure 0..1 |
-| `observation.eef_pose` | 7 | tool position [m] and xyzw quaternion in the brain's convention |
+| `observation.eef_pose` | 7 | tool position [m] and wxyz quaternion |
 | `action` | 8 | 7 absolute joint targets [rad], gripper 0 (open) or 1 (closed) |
 | `observation.images.<camera>` | H, W, 3 | `cam_exterior_left`, `cam_exterior_right`, `cam_wrist`, `cam_front` |
 
@@ -102,12 +105,11 @@ recorded with `--jitter 0` in `task-franka-tabletop`'s own `TabletopEvalEnv`.
 
 ### eval-nav
 
-`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates all 16 tasks in process with the single `env_scene` `all`: one stage,
-`num_envs: 64` envs (four per task) and `num_episodes: 4` runs, so 16 jittered episodes of each task. The scorer
-`manipulation.multitask.rl` (`episode = success * (0.75 + 0.25 * speed)`) maps episode `n` to task `n % T` of the bundle's
-`benchmark.yaml`, so keep `all` as the only `env_scene`. On Linux, eval-nav forks one worker per scene. On Windows it
-runs the scenes in the process that already started Kit. The task module's `tasks_of_scene` tells eval-nav which scene ids it owns and which tasks each
-one runs, so eval-nav has no scene name of its own. The in-process runner and the `v11` to `v13` configs are untouched.
+`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates the 16 tasks of v0. `task-franka-tabletop-rl-v1.yaml` evaluates
+all 120 tasks: `num_envs` at least 44 and `num_episodes` a multiple of the three background phases. The scorer
+`manipulation.multitask.rl` (`episode = success * (0.75 + 0.25 * speed)`) reads the task id of the episode each env
+just finished. The task module's `task_ids_of` tells eval-nav which tasks a bundle runs. The brain-runtime configs
+for `v11` to `v13` are untouched.
 
 ## Results
 
