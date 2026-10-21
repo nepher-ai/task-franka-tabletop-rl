@@ -32,7 +32,7 @@ from franka_tabletop_rl.tabletop.scene_cfg import (
 
 from ..ll_policy.ll_env_cfg import ActionsCfg, ObservationsCfg
 from . import mdp
-from .highlight_cfg import HighlightPreset
+from .highlight import HighlightCfg, HighlightPreset, rendering_camera
 from .task_state import ALL_TASKS, resolve_tasks, task_payloads
 
 
@@ -79,7 +79,7 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
             stay either way, so a Kit window shows the benchmark stage.
         highlight: ``on`` records highlight videos of up to 16 tasks and changes nothing else. Pass it as
-            ``env.highlight=on``. See :mod:`.highlight_cfg`.
+            ``env.highlight=on``.
     """
 
     scene: TabletopSceneCfg = TabletopSceneCfg(num_envs=1, env_spacing=2.5)
@@ -126,6 +126,18 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command.task_ids = self.task_ids
         command.pose_jitter_m = self.pose_jitter_m
         command.layout_seed = self.layout_seed
+
+    def play_mode(self):
+        """Play defaults, plus the rendering camera when highlight videos were selected.
+
+        The camera is not on the scene, so nothing spawns it. Its presence tells Kit to load the
+        rendering app. A plain play drops the preset, so the rendering app stays off.
+        """
+        super().play_mode()
+        if isinstance(self.highlight, HighlightCfg):
+            self.rendering_camera = rendering_camera()
+        else:
+            self.highlight = None
 
 
 @configclass

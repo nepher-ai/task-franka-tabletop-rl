@@ -26,19 +26,21 @@ from franka_tabletop_rl.tasks.hl_policy.highlight import (  # noqa: E402
 )
 
 
-def test_highlight_is_off_unless_selected_and_selects_four_cell_size_cameras():
-    from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS
-    from franka_tabletop_rl.tasks.hl_policy.highlight_cfg import HighlightCfg, HighlightPreset
+def test_highlight_stays_off_until_it_is_selected():
+    from franka_tabletop_rl.tasks.hl_policy.highlight import HighlightCfg, HighlightPreset
     from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY
 
-    preset = HighlightPreset()
-    assert preset.default is None
-    assert isinstance(preset.on, HighlightCfg)
-    for name in OBSERVATION_CAMERAS:
-        camera = getattr(preset.on, name)
-        assert (camera.height, camera.width) == (CELL_HEIGHT, CELL_WIDTH)
-    # The stage is built from the same cfg whether or not highlight is selected.
-    assert isinstance(HLEnvCfg_PLAY().highlight, HighlightPreset)
+    cfg = HLEnvCfg_PLAY()
+    assert isinstance(cfg.highlight, HighlightPreset)
+    cfg.play_mode()
+    assert cfg.highlight is None
+    assert not hasattr(cfg, "rendering_camera")
+
+    cfg = HLEnvCfg_PLAY()
+    cfg.highlight = cfg.highlight.on
+    cfg.play_mode()
+    assert isinstance(cfg.highlight, HighlightCfg)
+    assert (cfg.rendering_camera.height, cfg.rendering_camera.width) == (CELL_HEIGHT, CELL_WIDTH)
 
 
 def test_a_large_stage_is_sampled_with_the_seed_and_shown_in_benchmark_order():
