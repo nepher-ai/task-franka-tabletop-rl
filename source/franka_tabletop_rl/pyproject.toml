@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "franka_tabletop_rl"
+version = "0.1.0"
+description = "Hierarchical (planner, low-level policy, IK) Franka pick-and-place on the tabletop benchmark scene."
+authors = [{ name = "Nepher Robotics" }]
+license = "BSD-3-Clause"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.20",
+    "psutil",
+]
+
+[project.optional-dependencies]
+# LeRobot v2 dataset writer (scripts/record_lerobot.py).
+record = [
+    "pyarrow>=14",
+    "av>=12",
+]
+
+[project.entry-points."isaaclab.tasks"]
+franka_tabletop_rl = "franka_tabletop_rl.tasks"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["franka_tabletop_rl*"]
+
+[tool.setuptools.package-data]
+franka_tabletop_rl = ["tabletop/assets/robots/*"]

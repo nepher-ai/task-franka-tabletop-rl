@@ -1,0 +1,28 @@
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.eggs/
+dist/
+build/
+**/.pytest_cache/
+
+# IDE
+**/.idea/
+**/.vscode/
+*.swp
+
+# Training / runtime outputs
+logs/
+outputs/
+output/
+runs/
+datasets/
+recordings/
+videos/
+wandb/
+*.tmp
+
+# Checkpoints are produced by scripts/rsl_rl/play.py.
+best_policy/*.pt
+best_policy/exported/

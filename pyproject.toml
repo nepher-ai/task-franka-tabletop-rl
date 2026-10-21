@@ -1,0 +1,12 @@
+# Install the package with:
+#   python -m pip install -e source/franka_tabletop_rl
+# from a machine that has Isaac Lab 3.0. That package publishes the isaaclab.tasks entry point.
+
+[project]
+name = "task-franka-tabletop-rl"
+version = "0.1.0"
+description = "Hierarchical Franka tabletop pick-and-place (planner, low-level policy, IK) and LeRobot data collection."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

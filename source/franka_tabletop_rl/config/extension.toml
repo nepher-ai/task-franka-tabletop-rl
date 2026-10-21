@@ -1,0 +1,23 @@
+[package]
+
+version = "0.1.0"
+category = "isaaclab"
+readme  = "README.md"
+
+title       = "Franka Tabletop RL - Hierarchical Pick-and-Place"
+author      = "Nepher Robotics"
+maintainer  = "Nepher Robotics"
+description = "Hierarchical Franka pick-and-place on the tabletop benchmark scene: classical planner, learned low-level EE tracker, IK, absolute joint commands. Collects LeRobot datasets for brain training."
+repository  = ""
+keywords    = ["franka", "tabletop", "pick-and-place", "hierarchical", "lerobot", "isaaclab"]
+
+[dependencies]
+"isaaclab"        = {}
+"isaaclab_assets" = {}
+"isaaclab_rl"     = {}
+"isaaclab_tasks"  = {}
+
+[[python.module]]
+name = "franka_tabletop_rl"
+
+[isaac_lab_settings]
