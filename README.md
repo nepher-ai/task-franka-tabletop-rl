@@ -59,18 +59,26 @@ Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a windo
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-LL-Play-v0 --num_envs 64 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 4 env.scene_id=throw_away_apple --viz none
-.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --highlight --viz kit
-.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0 --highlight --viz kit
 ```
-
-`--highlight` on either high-level play task picks 16 distinct tasks at random, one env each, and writes four
-1280×720 videos to `best_policy/videos/highlight/`: `cam_exterior_left.mp4`, `cam_exterior_right.mp4`,
-`cam_wrist.mp4`, and `cam_front.mp4`. Each frame is a 4×4 grid of those tasks. The clip lasts one episode
-(`episode_length_s`, 40 s). The Isaac process exits when the four files have been written.
 
 `Nepher-FrankaTabletopRL-LL-Play-v0` and `Nepher-FrankaTabletopRL-HL-Play-v0` load the latest `model_*.pt` under
 `logs/rsl_rl/franka_tabletop_ll_ee_tracking` unless you pass `--checkpoint`. Copy the checkpoint eval-nav should load to
 `best_policy/best_policy.pt`. `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` loads that file. The checkpoint is not committed.
+
+### Highlight videos
+
+`env.highlight=on` on `Nepher-FrankaTabletopRL-HL-Play-v0` or `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` adds video
+recording to a play session and changes nothing else: the tasks, `--num_envs`, and layouts are those of the same
+command without the override. It selects a config preset, so Isaac Lab starts Kit with camera rendering by itself. It writes `best_policy/videos/highlight/<camera>.mp4` for `cam_exterior_left`,
+`cam_exterior_right`, `cam_wrist`, and `cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one
+episode (`episode_length_s`, 40 s). The grid shows up to 16 tasks of the stage in benchmark order. A stage with more
+than 16 tasks shows 16 sampled with the seed, so a benchmark of any size gives the same video size. A stage with
+fewer leaves the remaining cells black. Only the selected envs are rendered, at the cell size, so the cost does not
+grow with the task count.
+
+```bat
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none env.highlight=on
+```
 
 ### Dataset for brains
 

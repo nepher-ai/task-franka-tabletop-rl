@@ -63,7 +63,6 @@ from franka_tabletop_rl.paths import sync_best_policy  # noqa: E402
 from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS, selected_cameras  # noqa: E402
 from franka_tabletop_rl.tabletop.core.observations import camera_rgb, eef_pose, gripper_pos, joint_pos, resize_rgb  # noqa: E402
 from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD  # noqa: E402
-from franka_tabletop_rl.tabletop.core.sensors import at_resolution  # noqa: E402
 from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY  # noqa: E402
 from franka_tabletop_rl.tasks.hl_policy.task_state import ALL_TASKS  # noqa: E402
 
@@ -105,10 +104,6 @@ def main() -> None:
     )
     if args_cli.num_envs is not None:
         cfg.scene.num_envs = args_cli.num_envs
-    # Render at the saved size. The writer used to scale 1280 by 720 frames down after the fact.
-    frame_h, frame_w = args_cli.image_hw
-    for name in cameras:
-        setattr(cfg.scene, name, at_resolution(getattr(cfg.scene, name), frame_h, frame_w))
     env = gym.make(GYM_ID, cfg=cfg)
     unwrapped = env.unwrapped
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)

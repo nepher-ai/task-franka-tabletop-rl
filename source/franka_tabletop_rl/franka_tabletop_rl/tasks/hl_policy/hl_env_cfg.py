@@ -32,6 +32,7 @@ from franka_tabletop_rl.tabletop.scene_cfg import (
 
 from ..ll_policy.ll_env_cfg import ActionsCfg, ObservationsCfg
 from . import mdp
+from .highlight_cfg import HighlightPreset
 from .task_state import ALL_TASKS, resolve_tasks, task_payloads
 
 
@@ -77,6 +78,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         pose_jitter_m: Per-episode shift [m] of each object in the table plane. Zero is the benchmark layout.
         cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
             stay either way, so a Kit window shows the benchmark stage.
+        highlight: ``on`` records highlight videos of up to 16 tasks and changes nothing else. Pass it as
+            ``env.highlight=on``. See :mod:`.highlight_cfg`.
     """
 
     scene: TabletopSceneCfg = TabletopSceneCfg(num_envs=1, env_spacing=2.5)
@@ -93,6 +96,7 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     cameras: tuple[str, ...] = ()
     """Observation cameras to spawn. Empty spawns none."""
     layout_seed: int = 1
+    highlight: HighlightPreset = HighlightPreset()
     task_ids: tuple[str, ...] = ()
     """Tasks of the stage, filled from ``scene_id``."""
     mixed_plan: object | None = None

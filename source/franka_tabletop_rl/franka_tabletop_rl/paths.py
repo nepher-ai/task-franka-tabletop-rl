@@ -32,8 +32,8 @@ def best_policy_path() -> Path:
 
 
 def play_video_dir() -> Path:
-    """Directory of the highlight videos written by ``--highlight``."""
-    return project_root() / "best_policy" / "videos" / "highlight"
+    """Directory for the ``--highlight`` play videos."""
+    return best_policy_path().parent / "videos" / "highlight"
 
 
 def sync_best_policy(

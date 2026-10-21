@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The play highlight grid is 16 tasks in a 1280 by 720 frame."""
+"""The play highlight grid shows up to 16 tasks of the stage in a 1280 by 720 frame."""
 
 from __future__ import annotations
 
@@ -20,60 +20,55 @@ from franka_tabletop_rl.tasks.hl_policy.highlight import (  # noqa: E402
     CELL_HEIGHT,
     CELL_WIDTH,
     HIGHLIGHT_COUNT,
-    choose_tasks,
     episode_steps,
-    highlight_requested,
-    label_cell,
+    highlight_envs,
     tile_views,
 )
 
 
-def test_highlight_requested_matches_the_play_flag(monkeypatch: pytest.MonkeyPatch):
-    assert highlight_requested(["play", "--highlight"])
-    assert not highlight_requested(["play", "--video"])
-    assert not highlight_requested(["play"])
-    monkeypatch.setenv("FRANKA_TABLETOP_HIGHLIGHT", "1")
-    assert highlight_requested()
-    monkeypatch.setenv("FRANKA_TABLETOP_HIGHLIGHT", "0")
-    assert not highlight_requested(["play"])
+def test_highlight_is_off_unless_selected_and_selects_four_cell_size_cameras():
+    from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS
+    from franka_tabletop_rl.tasks.hl_policy.highlight_cfg import HighlightCfg, HighlightPreset
+    from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY
+
+    preset = HighlightPreset()
+    assert preset.default is None
+    assert isinstance(preset.on, HighlightCfg)
+    for name in OBSERVATION_CAMERAS:
+        camera = getattr(preset.on, name)
+        assert (camera.height, camera.width) == (CELL_HEIGHT, CELL_WIDTH)
+    # The stage is built from the same cfg whether or not highlight is selected.
+    assert isinstance(HLEnvCfg_PLAY().highlight, HighlightPreset)
 
 
-def test_choose_tasks_is_a_seeded_permutation_of_sixteen():
-    names = [f"task_{index}" for index in range(20)]
-    first = choose_tasks(names, HIGHLIGHT_COUNT, seed=1)
-    assert first == choose_tasks(names, HIGHLIGHT_COUNT, seed=1)
+def test_a_large_stage_is_sampled_with_the_seed_and_shown_in_benchmark_order():
+    first = highlight_envs(40, 80, seed=1)
+    assert first == highlight_envs(40, 80, seed=1)
     assert len(first) == len(set(first)) == HIGHLIGHT_COUNT
-    assert set(first) <= set(names)
-    assert choose_tasks(names, HIGHLIGHT_COUNT, seed=2) != first
+    assert list(first) == sorted(first)
+    assert all(0 <= index < 40 for index in first)
+    assert highlight_envs(40, 80, seed=2) != first
 
 
-def test_choose_tasks_rejects_a_short_stage():
-    with pytest.raises(ValueError, match="16 distinct"):
-        choose_tasks(["only_one"], HIGHLIGHT_COUNT, seed=1)
+def test_highlighted_envs_run_distinct_tasks_without_adding_envs():
+    task_count, num_envs = 24, 96
+    envs = highlight_envs(task_count, num_envs, seed=3)
+    assert all(index < num_envs for index in envs)
+    assert len({index % task_count for index in envs}) == len(envs)
+
+
+@pytest.mark.parametrize("task_count", [1, 5, HIGHLIGHT_COUNT])
+def test_a_short_stage_highlights_every_task(task_count: int):
+    assert highlight_envs(task_count, task_count * 2, seed=7) == tuple(range(task_count))
+
+
+def test_highlight_needs_an_env_for_every_task():
+    with pytest.raises(ValueError, match="at least one env per task"):
+        highlight_envs(20, 10, seed=1)
 
 
 def test_episode_steps_matches_the_control_rate():
     assert episode_steps(40.0, 1.0 / 15.0) == 600
-
-
-def test_highlight_cameras_render_at_the_cell_size():
-    from franka_tabletop_rl.tabletop.core.sensors import at_resolution, front_camera
-
-    full = front_camera()
-    cell = at_resolution(full, CELL_HEIGHT, CELL_WIDTH)
-    assert (full.height, full.width) == (720, 1280)
-    assert (cell.height, cell.width) == (CELL_HEIGHT, CELL_WIDTH)
-
-
-def test_label_cell_writes_the_task_id_on_the_bottom_strip():
-    image = np.full((CELL_HEIGHT, CELL_WIDTH, 3), 180, dtype=np.uint8)
-    labeled = label_cell(image, "apple_and_yogurt_in_bowl")
-    assert labeled.shape == image.shape
-    assert labeled.dtype == np.uint8
-    assert np.array_equal(labeled[: CELL_HEIGHT // 2], image[: CELL_HEIGHT // 2])
-    bottom = labeled[-28:]
-    assert bottom.max() > 200
-    assert (bottom == 24).any()
 
 
 def test_tile_views_places_each_task_in_row_major_order():
@@ -83,3 +78,17 @@ def test_tile_views_places_each_task_in_row_major_order():
     assert canvas.shape == (720, 1280, 3)
     row, column = divmod(5, 4)
     assert tuple(canvas[row * CELL_HEIGHT, column * CELL_WIDTH]) == (9, 8, 7)
+
+
+def test_tile_views_leaves_unused_cells_black():
+    frames = np.full((3, CELL_HEIGHT, CELL_WIDTH, 3), 200, dtype=np.uint8)
+    canvas = tile_views(frames)
+    assert canvas.shape == (720, 1280, 3)
+    assert canvas[:CELL_HEIGHT, : 3 * CELL_WIDTH].min() == 200
+    assert canvas[:CELL_HEIGHT, 3 * CELL_WIDTH :].max() == 0
+    assert canvas[CELL_HEIGHT:].max() == 0
+
+
+def test_tile_views_rejects_a_batch_that_does_not_fit_the_grid():
+    with pytest.raises(ValueError, match="highlight frames"):
+        tile_views(np.zeros((HIGHLIGHT_COUNT + 1, CELL_HEIGHT, CELL_WIDTH, 3), dtype=np.uint8))
