@@ -72,26 +72,6 @@ def resolve_surface(stage: dict, name: str | None = None) -> dict:
     return _select(stage["surfaces"], name if name is not None else stage.get("surface"), "surface")
 
 
-def table_span(
-    stage: dict, surface: str | None = None
-) -> tuple[tuple[float, float, float], tuple[float, float], float]:
-    """Return ``(table_m, center_xy, table_z_m)`` for one work surface.
-
-    ``table_m`` is the tabletop size [m]. ``center_xy`` is its center in the env frame [m].
-    ``table_z_m`` is the surface height [m].
-    """
-    record = resolve_surface(stage, surface)
-    label = record.get("name", "")
-    try:
-        table_m = tuple(float(value) for value in record["table_m"])
-        center_xy = tuple(float(value) for value in record["center_xy"])
-    except KeyError as exc:
-        raise ValueError(f"surface {label!r} is missing {exc.args[0]}") from exc
-    if len(table_m) != 3 or len(center_xy) != 2:
-        raise ValueError(f"surface {label!r} needs table_m of length 3 and center_xy of length 2")
-    return table_m, center_xy, float(record.get("table_z_m", 0.0))
-
-
 def _records(payload: dict, plural: str, singular: str) -> tuple[list[dict], str | None]:
     default = payload.get(singular)
     if plural in payload:

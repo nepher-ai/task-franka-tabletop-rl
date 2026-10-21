@@ -216,8 +216,28 @@ def test_goal_queue_covers_each_op_and_leaves_upright_unsupported():
 
     placed = queue({"op": "on_top", "object": "cube", "support": "plate"})
     assert placed.supported and placed.goals[0].op == "on_top" and placed.goals[0].slot == "item"
+    for op, extra in (
+        ("stacked", {"support": "plate"}),
+        ("on_side", {"reference": "plate", "side": "left"}),
+        ("outside", {"container": "bin"}),
+        ("centered", {}),
+        ("lifted", {}),
+        ("in_container", {"container": "bin"}),
+    ):
+        result = queue({"op": op, "object": "cube", **extra})
+        assert result.supported and result.goals[0].op == op and result.goals[0].slot == "item"
     held = queue({"op": "picked", "object": "cube"})
     assert held.goals[0].op == "picked"
+    grouped = queue(
+        {
+            "op": "all",
+            "checks": [
+                {"op": "on_top", "object": "cube", "support": "plate"},
+                {"op": "picked", "object": "plate"},
+            ],
+        }
+    )
+    assert [goal.op for goal in grouped.goals] == ["on_top", "picked"]
     ordered = queue({"op": "in_order", "objects": ["plate", "cube"], "container": "bin"})
     assert ordered.ordered and [goal.slot for goal in ordered.goals] == ["plate", "item"]
     either = queue(

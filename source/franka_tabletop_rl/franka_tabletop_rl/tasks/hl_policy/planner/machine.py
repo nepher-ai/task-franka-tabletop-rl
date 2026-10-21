@@ -553,13 +553,15 @@ def _stage(env):
 def build_planner(env, tracker: TaskTracker, points_per_object: int = 6000) -> ClassicalTabletopPlanner:
     """Sample every task's object surfaces from the spawned prims and build the planner.
 
-    Points are taken from an env that runs the task. A point's root-frame position is
-    ``R^T (p - root)`` with the rotation ``R`` of that body's spawn pose.
+    Each USD variant (path and scale) is sampled once, from an env that holds it. A point's
+    root-frame position is ``R^T (p - root)`` with the rotation ``R`` of that body's spawn pose.
     """
     stage = _stage(env)
     plan = tracker.plan
     points: list[dict[str, np.ndarray]] = []
     rest: list[dict[str, tuple]] = []
+    # One surface sample per USD variant. Tasks that share a mesh reuse it.
+    sampled: dict[tuple, np.ndarray] = {}
     for task, published in enumerate(tracker.task_layouts):
         phase, sample = tracker.sample_env(task)
         origin = tracker.origin(sample)
@@ -568,11 +570,14 @@ def build_planner(env, tracker: TaskTracker, points_per_object: int = 6000) -> C
         for placement in published.placements:
             if placement.asset.kind == "anchor":
                 continue
-            entity = plan.phase_slots[phase][sample][placement.slot]
-            spawn_pos, spawn_quat = plan.start_poses[plan.entities.index(entity)]
-            world = sample_prim_points(stage, f"/World/envs/env_{sample}/{entity}", points_per_object)
-            spawn_rot = quat_wxyz_to_matrix(np.asarray(spawn_quat, dtype=np.float64))
-            task_points[placement.slot] = (world - (origin + np.asarray(spawn_pos, dtype=np.float64))) @ spawn_rot
+            variant = (placement.asset.usd, tuple(placement.scale or ()))
+            if variant not in sampled:
+                entity = plan.phase_slots[phase][sample][placement.slot]
+                spawn_pos, spawn_quat = plan.start_poses[plan.entities.index(entity)]
+                world = sample_prim_points(stage, f"/World/envs/env_{sample}/{entity}", points_per_object)
+                spawn_rot = quat_wxyz_to_matrix(np.asarray(spawn_quat, dtype=np.float64))
+                sampled[variant] = (world - (origin + np.asarray(spawn_pos, dtype=np.float64))) @ spawn_rot
+            task_points[placement.slot] = sampled[variant]
             task_rest[placement.slot] = (
                 np.asarray(placement.position_m, dtype=np.float64),
                 np.asarray(placement.quat_wxyz, dtype=np.float64),
