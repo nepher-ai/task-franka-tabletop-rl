@@ -27,8 +27,16 @@ class HLTabletopEnv(ManagerBasedRLEnv):
     """
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
+        from .highlight import apply_highlight, highlight_requested
+
+        if highlight_requested():
+            apply_highlight(cfg)
         plan = tile_plan(plan_tasks(resolve_bundle(cfg.env_id), cfg.task_ids), cfg.scene.num_envs)
         cfg.mixed_plan = plan
         # Every env owns its object meshes, so the cloner must build one world per env.
         with planned_worlds(plan):
             super().__init__(cfg, render_mode, **kwargs)
+        if highlight_requested() and cfg.video_recorders:
+            from .highlight_recorder import HighlightRecorder
+
+            self.video_recorders = [HighlightRecorder(item, self) for item in cfg.video_recorders]

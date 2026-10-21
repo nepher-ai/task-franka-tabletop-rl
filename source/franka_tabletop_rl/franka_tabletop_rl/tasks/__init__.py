@@ -3,6 +3,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Gym registrations of the hierarchical tabletop tasks."""
+"""Register the Franka tabletop RL tasks. Imported via the isaaclab.tasks entry point."""
 
-from . import manager_based  # noqa: F401
+from franka_tabletop_rl.tasks.checkpoint import prefer_checkpoint_file
+
+from . import hl_policy, ll_policy  # noqa: F401
+from .hl_policy.eval_compat import wrap_for_eval  # noqa: F401
+
+prefer_checkpoint_file()

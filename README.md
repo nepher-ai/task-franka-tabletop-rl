@@ -1,7 +1,8 @@
 # task-franka-tabletop-rl
 
-Hierarchical Franka pick-and-place on the `task-franka-tabletop` benchmark scene, in the same family as
-`task-franka-pickandplace-multibase`. The project is not a brain runtime: there are no sockets or brain images.
+Hierarchical Franka pick-and-place on the `task-franka-tabletop` benchmark scene, for Isaac Sim 6.1.0 and
+Isaac Lab 3.0. The install target and the `isaaclab.bat train` / `play` commands follow `task-go2-lidar-maze`.
+The project is not a brain runtime: there are no sockets or brain images.
 [PRINCIPLES.md](PRINCIPLES.md) holds the constraints it follows.
 
 ```
@@ -21,8 +22,8 @@ classical planner (hl_policy) -> learned end-effector tracker (ll_policy) -> dam
 | Id | Use |
 | --- | --- |
 | `Nepher-FrankaTabletopRL-LL-v0`, `-LL-Play-v0` | Train and play the tracker |
-| `Nepher-FrankaTabletopRL-HL-Play-v0` | Planner plus tracker on every benchmark task in one stage (`--scene_id <task_id>` keeps one) |
-| `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` | The same, built by eval-nav from an EnvHub bundle |
+| `Nepher-FrankaTabletopRL-HL-Play-v0` | Planner plus tracker on every benchmark task in one stage. Loads the latest tracker checkpoint |
+| `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` | The same, built by eval-nav from an EnvHub bundle. Loads `best_policy/best_policy.pt` |
 
 Both high-level tasks load the benchmark from the nepher cache of `franka-tabletop-rl-v0`
 (`nepher download franka-tabletop-rl-v0`). That bundle has the 16 tasks of the tabletop benchmark.
@@ -34,32 +35,61 @@ task does not use are parked away from the table. The layout code is the `mixed`
 (`tabletop/scenes/mixed.py`, `tabletop/core/clone.py`), and `tabletop/tiling.py` repeats the `T` tasks over `num_envs` envs.
 Because every env owns its meshes, the cloner builds one world per env (`replicate_physics=False`), which costs build time.
 
-## Use
+`isaaclab.bat train` and `play` discover these through the `isaaclab.tasks` entry point.
 
-Install with `python -m pip install -e source/franka_tabletop_rl` (add `[record]` for the dataset tools), then:
+## Install
 
+Isaac Sim has to run with its bundled Python, so every command goes through `isaaclab.bat` from the Isaac Lab root
+(`f:\IsaacLab`). Inside that tree this package is `source\task-franka-tabletop-rl\source\franka_tabletop_rl`.
+
+```bat
+.\isaaclab.bat -p -m pip install -e source\task-franka-tabletop-rl\source\franka_tabletop_rl
+.\isaaclab.bat -p -m pip install -e "source\task-franka-tabletop-rl\source\franka_tabletop_rl[record]"
 ```
-python scripts/rsl_rl/train.py --task Nepher-FrankaTabletopRL-LL-v0 --num_envs 4096 --max_iterations 1500
-python scripts/rsl_rl/play.py --num_envs 64                       # tracking error; publishes best_policy/best_policy.pt
-python scripts/rsl_rl/play.py --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --num_episodes 2   # all tasks, success per task
-python scripts/rsl_rl/play.py --task Nepher-FrankaTabletopRL-HL-Play-v0 --scene_id throw_away_apple --num_envs 4
+
+The second line adds the LeRobot writer. TensorBoard logs are under this project, not the Isaac Lab `logs` directory.
+
+## Train and play
+
+Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a window. Playback runs until Ctrl+C.
+`--num_envs` for a high-level task must be a multiple of the task count. One task is `env.scene_id=<task_id>`.
+
+```bat
+.\isaaclab.bat train --task Nepher-FrankaTabletopRL-LL-v0 --num_envs 4096 --max_iterations 1500 --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-LL-Play-v0 --num_envs 64 --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 4 env.scene_id=throw_away_apple --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --highlight --viz kit
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0 --highlight --viz kit
 ```
 
-`play.py` copies the chosen checkpoint to `best_policy/best_policy.pt` and exports `best_policy/exported/ll_policy.{pt,onnx}`.
-Both the high-level tasks and eval-nav load that fixed path. The checkpoint is not committed.
+`--highlight` on either high-level play task picks 16 distinct tasks at random, one env each, and writes four
+1280×720 videos to `best_policy/videos/highlight/`: `cam_exterior_left.mp4`, `cam_exterior_right.mp4`,
+`cam_wrist.mp4`, and `cam_front.mp4`. Each frame is a 4×4 grid of those tasks. The clip lasts one episode
+(`episode_length_s`, 40 s). The Isaac process exits when the four files have been written.
+
+`Nepher-FrankaTabletopRL-LL-Play-v0` and `Nepher-FrankaTabletopRL-HL-Play-v0` load the latest `model_*.pt` under
+`logs/rsl_rl/franka_tabletop_ll_ee_tracking` unless you pass `--checkpoint`. Copy the checkpoint eval-nav should load to
+`best_policy/best_policy.pt`. `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` loads that file. The checkpoint is not committed.
 
 ### Dataset for brains
 
 `scripts/record_lerobot.py` runs the planner and the tracker, and keeps the successful episodes as a LeRobot v2.1 dataset
-(`--cameras` adds the three brain cameras as h264 video). It records all tasks at once, or one with `--task <task_id>`.
+(`--cameras` records every camera as h264 video, and `--cameras cam_wrist cam_front` records those). It records all tasks at once, or one with `--task <task_id>`.
 `--episodes` is the number of successful episodes kept per task, and `--num_envs` a multiple of the task count.
+It also copies the tracker it used to `best_policy/best_policy.pt`.
+
+```bat
+.\isaaclab.bat -p source\task-franka-tabletop-rl\scripts\record_lerobot.py --episodes 8 --num_envs 32 --output datasets\tabletop_rl
+.\isaaclab.bat -p source\task-franka-tabletop-rl\scripts\replay_check.py --dataset datasets\tabletop_rl --episode 0
+```
 
 | Feature | Shape | Content |
 | --- | --- | --- |
 | `observation.state` | 8 | 7 joint positions [rad], gripper closure 0..1 |
 | `observation.eef_pose` | 7 | tool position [m] and xyzw quaternion in the brain's convention |
 | `action` | 8 | 7 absolute joint targets [rad], gripper 0 (open) or 1 (closed) |
-| `observation.images.<camera>` | H, W, 3 | `cam_exterior_left`, `cam_exterior_right`, `cam_wrist` |
+| `observation.images.<camera>` | H, W, 3 | `cam_exterior_left`, `cam_exterior_right`, `cam_wrist`, `cam_front` |
 
 `meta/modality.json` declares the GR00T embodiment `franka_2f85_jointpos`. `scripts/replay_check.py` replays an episode
 recorded with `--jitter 0` in `task-franka-tabletop`'s own `TabletopEvalEnv`.
@@ -69,8 +99,8 @@ recorded with `--jitter 0` in `task-franka-tabletop`'s own `TabletopEvalEnv`.
 `eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates all 16 tasks in process with the single `env_scene` `all`: one stage,
 `num_envs: 64` envs (four per task) and `num_episodes: 4` runs, so 16 jittered episodes of each task. The scorer
 `manipulation.multitask.rl` (`episode = success * (0.75 + 0.25 * speed)`) maps episode `n` to task `n % T` of the bundle's
-`benchmark.yaml`, so keep `all` as the only `env_scene`. eval-nav starts one subprocess per scene by forking, so run
-`evaluate.py` on Linux. The task module's `tasks_of_scene` tells eval-nav which scene ids it owns and which tasks each
+`benchmark.yaml`, so keep `all` as the only `env_scene`. On Linux, eval-nav forks one worker per scene. On Windows it
+runs the scenes in the process that already started Kit. The task module's `tasks_of_scene` tells eval-nav which scene ids it owns and which tasks each
 one runs, so eval-nav has no scene name of its own. The in-process runner and the `v11` to `v13` configs are untouched.
 
 ## Results
@@ -94,15 +124,16 @@ Measured on one RTX 4090 with the committed code and the checkpoint of iteration
 
   That is 170 of 256 episodes. `cubes_and_blocks_in_bin` asks for seven objects in 40 s, which the planner's pace does not
   reach, and `foodpacking_1bin_3can` needs three cans in 40 s. The rates of the harder tasks move a lot between runs of
-  16 episodes: `foodpacking_1bin_3can` succeeded in 7/16, 6/16, and 2/16 episodes in other runs, and `play.py --num_envs 64
-  --num_episodes 2` (8 episodes per task) gave 84 of 128 episodes in total.
+  16 episodes: `foodpacking_1bin_3can` succeeded in 7/16, 6/16, and 2/16 episodes in other runs, and a 64-env run
+  with 8 episodes of each task gave 84 of 128 episodes in total.
 - **Equivalence.** Two recorded episodes of `throw_away_apple` replayed in `TabletopEvalEnv` finish the task, and the joints
   follow the recorded path within 0.018 rad.
 - **eval-nav.** On Windows, where `evaluate.py` cannot fork, a script that follows the in-process worker steps of eval-nav
   (config class, `gym.make`, `wrap_for_eval`, checkpoint policy) ran `task-franka-tabletop-rl.yaml` with `scene: all`: 64 envs,
   4 runs, 256 episodes in 13 minutes on one RTX 4090. The scorer's task groups held 16 episodes each. Building the
   64-env stage takes about 20 s, the same as 16 envs. `record_lerobot.py --num_envs 32` saved one episode of every task in 6 minutes.
+
 ## Tests
 
-`python -m pytest tests` (Isaac Lab python, no GPU needed): parity of the vendored layer, grasp search and the planner's
+From this directory, `..\..\isaaclab.bat -p -m pytest tests` (no GPU needed): parity of the vendored layer, grasp search and the planner's
 stage logic on a fake tracker, the eval-nav wrapper, and the LeRobot writer.

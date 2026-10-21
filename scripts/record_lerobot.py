@@ -10,21 +10,16 @@ one successful run of a benchmark task. A step stores the brain's own
 observation (joint position, gripper, tool pose, camera frames) and the absolute joint target that
 the tracker's IK action produced, so a brain trained on it acts in the benchmark's action space.
 
-Examples:
-    python scripts/record_lerobot.py --episodes 8 --num_envs 32 --output datasets/tabletop_rl
-    python scripts/record_lerobot.py --task throw_away_apple --episodes 8 --cameras --output datasets/apple
+Examples, from the Isaac Lab root:
+    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --episodes 8 --num_envs 32
+    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --cameras cam_wrist cam_front --episodes 8
 """
 
 """Launch Isaac Sim first: modules that import ``pxr`` must load after the app starts."""
 
 import argparse
-import os
-import sys
 
 from isaaclab.app import AppLauncher
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rsl_rl"))
-import cli_args  # isort: skip  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Record planner demonstrations as a LeRobot dataset.")
 parser.add_argument("--task", type=str, default=None, help="One benchmark task id. Every task when omitted.")
@@ -35,14 +30,23 @@ parser.add_argument(
 )
 parser.add_argument("--jitter", type=float, default=0.04, help="Per-episode shift [m] of each object.")
 parser.add_argument("--seed", type=int, default=1, help="Seed of the first layout.")
-parser.add_argument("--cameras", action="store_true", default=False, help="Record the brain's three cameras.")
+parser.add_argument(
+    "--cameras",
+    nargs="*",
+    default=None,
+    metavar="NAME",
+    help=(
+        "Cameras to record: cam_exterior_left, cam_exterior_right, cam_wrist, cam_front. "
+        "Pass the flag with no names to record every camera. Omit the flag to record none."
+    ),
+)
 parser.add_argument("--image_hw", type=int, nargs=2, default=(180, 320), help="Camera frame size [pixels]: H W.")
 parser.add_argument("--max_steps", type=int, default=6000, help="Give up after this many control steps.")
 parser.add_argument("--keep_failed", action="store_true", default=False, help="Also save episodes that fail.")
-cli_args.add_rsl_rl_args(parser)
+parser.add_argument("--checkpoint", type=str, default=None, help="Tracker checkpoint file.")
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
-if args_cli.cameras:
+if args_cli.cameras is not None:
     args_cli.enable_cameras = True
 
 app_launcher = AppLauncher(args_cli)
@@ -55,12 +59,13 @@ import gymnasium as gym  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from franka_tabletop_rl.data.lerobot_writer import LeRobotWriter  # noqa: E402
-from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS  # noqa: E402
+from franka_tabletop_rl.paths import sync_best_policy  # noqa: E402
+from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS, selected_cameras  # noqa: E402
 from franka_tabletop_rl.tabletop.core.observations import camera_rgb, eef_pose, gripper_pos, joint_pos, resize_rgb  # noqa: E402
 from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD  # noqa: E402
-from franka_tabletop_rl.tasks.manager_based.hl_policy.hl_env_cfg import HLEnvCfg_PLAY  # noqa: E402
-from franka_tabletop_rl.tasks.manager_based.hl_policy.task_state import ALL_TASKS  # noqa: E402
-from policy_paths import sync_best_policy  # noqa: E402
+from franka_tabletop_rl.tabletop.core.sensors import at_resolution  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.task_state import ALL_TASKS  # noqa: E402
 
 from isaaclab_rl.rsl_rl import (  # noqa: E402
     RslRlVecEnvWrapper,
@@ -82,7 +87,6 @@ def _host(values: torch.Tensor) -> np.ndarray:
 def main() -> None:
     installed_version = check_rsl_rl_version()
     agent_cfg = load_cfg_from_registry(GYM_ID, "rsl_rl_cfg_entry_point")
-    agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, installed_version)
     checkpoint = sync_best_policy(
         agent_cfg.experiment_name,
@@ -91,14 +95,20 @@ def main() -> None:
         explicit_checkpoint=args_cli.checkpoint,
     )
 
+    # A bare ``--cameras`` is an empty list and means every camera. Omitting the flag is None.
+    cameras = OBSERVATION_CAMERAS if args_cli.cameras == [] else selected_cameras(args_cli.cameras)
     cfg = HLEnvCfg_PLAY(
         scene_id=args_cli.task or ALL_TASKS,
         pose_jitter_m=args_cli.jitter,
-        record_cameras=args_cli.cameras,
+        cameras=cameras,
         layout_seed=args_cli.seed,
     )
     if args_cli.num_envs is not None:
         cfg.scene.num_envs = args_cli.num_envs
+    # Render at the saved size. The writer used to scale 1280 by 720 frames down after the fact.
+    frame_h, frame_w = args_cli.image_hw
+    for name in cameras:
+        setattr(cfg.scene, name, at_resolution(getattr(cfg.scene, name), frame_h, frame_w))
     env = gym.make(GYM_ID, cfg=cfg)
     unwrapped = env.unwrapped
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -108,7 +118,6 @@ def main() -> None:
 
     tracker = unwrapped.command_manager.get_term("ee_pose").tracker
     arm_action = unwrapped.action_manager.get_term("arm_action")
-    cameras = OBSERVATION_CAMERAS if args_cli.cameras else ()
     size = tuple(args_cli.image_hw)
     fps = round(1.0 / unwrapped.step_dt)
     writer = LeRobotWriter(args_cli.output, fps=fps, camera_hw={name: size for name in cameras})

@@ -6,7 +6,7 @@ A Franka robot performs object manipulation on a table. Pick-and-place is the ta
 
 ## Project shape
 
-`task-franka-tabletop-rl` is a manager-based Isaac Lab external project, in the same family as `task-franka-pickandplace-multibase` and `task-humanoid-run-jump`.
+`task-franka-tabletop-rl` is a manager-based Isaac Lab external project, in the same family as `task-franka-pickandplace-multibase`, `task-humanoid-run-jump` and `task-go2-lidar-maze`. Mainly, `task-go2-lidar-maze`. Because, `task-franka-tabletop-rl` should be ran in IsaacSim 6.1.0/Isaaclab 3.0.0.
 
 It is a trainable hierarchical policy project: registered Gym tasks, low-level and high-level policy configs, and the usual train and play entry points of that family.
 

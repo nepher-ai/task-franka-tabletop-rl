@@ -10,11 +10,9 @@ in the env frame. The right exterior camera is that view mirrored across the
 robot's center plane, at (0.05, -0.57, 0.66) [m], with the same lens. The wrist
 camera is parented to the gripper base link. The front camera is RoboLab's
 viewport: 1.5 m in front of the robot and 1.0 m up, looking back at the table.
-It is recorded and is not sent to the brain. The env origin is the table
-surface, so these positions are not shifted up with the table. The exterior and
-wrist cameras render at 720x1280. A recording run writes the front, left exterior,
-and wrist views as one 720x1280 frame per shard, four by four cells of 180x320,
-and renders the front camera at that cell size.
+It is an observation camera, the same as the exterior and wrist views. The env origin is the table
+surface, so these positions are not shifted up with the table. The cameras render at
+720x1280 unless a recorder asks for a smaller frame.
 """
 
 from __future__ import annotations
@@ -26,6 +24,13 @@ from isaaclab.sensors import CameraCfg, ContactSensorCfg
 _EXTERIOR_LENS = dict(focal_length=2.1, focus_distance=28.0, horizontal_aperture=5.376, vertical_aperture=3.024)
 _WRIST_LENS = dict(focal_length=2.8, focus_distance=28.0, horizontal_aperture=5.376, vertical_aperture=3.024)
 _FRONT_LENS = dict(focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, vertical_aperture=15.29)
+
+
+def at_resolution(camera: CameraCfg, height: int, width: int) -> CameraCfg:
+    """Copy of ``camera`` that renders at ``height`` by ``width`` [pixels]."""
+    if height < 1 or width < 1:
+        raise ValueError(f"camera resolution must be positive, got {height} by {width}")
+    return camera.replace(height=height, width=width)
 
 
 def exterior_left_camera() -> CameraCfg:

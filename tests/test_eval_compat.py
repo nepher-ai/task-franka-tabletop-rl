@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,8 +18,8 @@ import torch
 PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
 sys.path.insert(0, str(PACKAGE))
 
-from franka_tabletop_rl.tasks.manager_based.hl_policy.eval_compat import wrap_for_eval  # noqa: E402
-from franka_tabletop_rl.tasks.manager_based.hl_policy.task_state import TaskTracker  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.eval_compat import wrap_for_eval  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.task_state import TaskTracker  # noqa: E402
 
 
 class _Env:
@@ -64,9 +65,25 @@ def test_wrapper_has_no_raw_state_and_reports_progress_and_text():
     assert wrapped.instructions() == ["task 0", "task 1"]
 
 
+def test_play_config_import_does_not_load_openusd():
+    """Parsing the play config must not import OpenUSD.
+
+    ``isaaclab.bat play`` builds this config before Kit starts. Importing the Kit Python
+    OpenUSD first makes Kit's own USD extensions fail to load on Windows.
+    """
+    script = (
+        "import sys\n"
+        "import franka_tabletop_rl.tasks.hl_policy.hl_env_cfg\n"
+        "franka_tabletop_rl.tasks.hl_policy.hl_env_cfg.HLEnvCfg_PLAY()\n"
+        "sys.exit(1 if 'pxr' in sys.modules else 0)\n"
+    )
+    completed = subprocess.run([sys.executable, "-c", script], check=False)
+    assert completed.returncode == 0
+
+
 def test_tasks_of_scene_names_the_benchmark_tasks_in_env_order():
     from franka_tabletop_rl.tabletop.bundle_path import resolve_bundle
-    from franka_tabletop_rl.tasks.manager_based.hl_policy.task_state import (
+    from franka_tabletop_rl.tasks.hl_policy.task_state import (
         ALL_TASKS,
         benchmark_task_ids,
         tasks_of_scene,

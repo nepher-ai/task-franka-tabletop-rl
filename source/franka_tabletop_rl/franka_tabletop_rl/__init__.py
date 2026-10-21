@@ -18,11 +18,11 @@ __version__ = "0.1.0"
 def __getattr__(name: str) -> Any:
     """Lazy export used by eval-nav through ``task_module``."""
     if name == "wrap_for_eval":
-        from .tasks.manager_based.hl_policy.eval_compat import wrap_for_eval
+        from .tasks.hl_policy.eval_compat import wrap_for_eval
 
         return wrap_for_eval
     if name == "tasks_of_scene":
-        from .tasks.manager_based.hl_policy.task_state import tasks_of_scene
+        from .tasks.hl_policy.task_state import tasks_of_scene
 
         return tasks_of_scene
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

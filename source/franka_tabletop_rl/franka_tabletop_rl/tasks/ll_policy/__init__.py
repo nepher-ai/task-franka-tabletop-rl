@@ -21,6 +21,7 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
+        "default_agent": "rsl_rl",
     },
 )
 
@@ -31,5 +32,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg_PLAY",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
+        "default_agent": "rsl_rl",
     },
 )

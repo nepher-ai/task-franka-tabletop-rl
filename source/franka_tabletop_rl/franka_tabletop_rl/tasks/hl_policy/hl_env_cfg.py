@@ -18,9 +18,11 @@ from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
+from isaaclab.visualizers.visualizer_cfg import VisualizerCfg
 
 from franka_tabletop_rl.frames import EE_BODY
 from franka_tabletop_rl.tabletop.bundle_path import DEFAULT_ENV_ID, resolve_bundle
+from franka_tabletop_rl.tabletop.core.observation_spec import OBSERVATION_CAMERAS, selected_cameras
 from franka_tabletop_rl.tabletop.scene_cfg import (
     TabletopSceneCfg,
     apply_stage_assets,
@@ -31,10 +33,6 @@ from franka_tabletop_rl.tabletop.scene_cfg import (
 from ..ll_policy.ll_env_cfg import ActionsCfg, ObservationsCfg
 from . import mdp
 from .task_state import ALL_TASKS, resolve_tasks, task_payloads
-
-# Cameras the brain benchmark sends, kept only when recording demonstrations.
-_RECORD_CAMERAS = ("cam_exterior_left", "cam_exterior_right", "cam_wrist")
-_ALL_CAMERAS = (*_RECORD_CAMERAS, "cam_front")
 
 
 @configclass
@@ -77,7 +75,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
             ``cubes_and_blocks_in_bin``). Env ``i`` runs task ``i % T``, and ``scene.num_envs`` must be a
             multiple of the number of tasks ``T``. It defaults to one env per task.
         pose_jitter_m: Per-episode shift [m] of each object in the table plane. Zero is the benchmark layout.
-        record_cameras: Keep the brain's cameras and the dome light, for demonstrations.
+        cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
+            stay either way, so a Kit window shows the benchmark stage.
     """
 
     scene: TabletopSceneCfg = TabletopSceneCfg(num_envs=1, env_spacing=2.5)
@@ -91,7 +90,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     env_id: str = DEFAULT_ENV_ID
     scene_id: str = ALL_TASKS
     pose_jitter_m: float = 0.0
-    record_cameras: bool = False
+    cameras: tuple[str, ...] = ()
+    """Observation cameras to spawn. Empty spawns none."""
     layout_seed: int = 1
     task_ids: tuple[str, ...] = ()
     """Tasks of the stage, filled from ``scene_id``."""
@@ -102,6 +102,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         apply_tabletop_physics(self)
+        # Kit otherwise paints a solid sky over the office dome. None keeps the dome texture.
+        self.sim.default_visualizer_cfg = VisualizerCfg(background_color=None)
         self.observations.policy.enable_corruption = False
         bundle = resolve_bundle(self.env_id)
         self.task_ids = tuple(resolve_tasks(bundle, str(self.scene_id)))
@@ -110,14 +112,11 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         mount_mixed(self, bundle, stage, payloads)
         # One env per task unless the caller asks for more copies.
         self.scene.num_envs = len(self.task_ids)
-        keep = _RECORD_CAMERAS if self.record_cameras else ()
-        for name in _ALL_CAMERAS:
+        keep = selected_cameras(self.cameras)
+        self.cameras = keep
+        for name in OBSERVATION_CAMERAS:
             if name not in keep:
                 setattr(self.scene, name, None)
-        if not self.record_cameras:
-            # Without cameras neither the dome light nor the light per env is needed.
-            self.scene.background = None
-            self.scene.light = None
         command = self.commands.ee_pose
         command.env_id = self.env_id
         command.task_ids = self.task_ids

@@ -18,11 +18,12 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
-from isaaclab.utils import configclass, index_fill_
+from isaaclab.utils import index_fill_
 
 from franka_tabletop_rl.tabletop.core.robot import GRIPPER_CLOSED_RAD
+
+from .ik_joint_action_cfg import IkJointCommandActionCfg
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -79,14 +80,3 @@ class IkJointCommandAction(DifferentialInverseKinematicsAction):
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         super().reset(env_ids)
         index_fill_(self._closed, env_ids, False)
-
-
-@configclass
-class IkJointCommandActionCfg(DifferentialInverseKinematicsActionCfg):
-    """Configuration of :class:`IkJointCommandAction`.
-
-    ``scale`` has seven entries: three position deltas [m], three rotation deltas [rad], and the gripper.
-    """
-
-    class_type: type = IkJointCommandAction
-    finger_joint_name: str = "finger_joint"

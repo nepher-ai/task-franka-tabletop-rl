@@ -1,6 +1,6 @@
-# Install the package with:
-#   python -m pip install -e source/franka_tabletop_rl
-# from a machine that has Isaac Lab 3.0. That package publishes the isaaclab.tasks entry point.
+# This file is not the install target. Install the package with:
+#   .\isaaclab.bat -p -m pip install -e source\task-franka-tabletop-rl\source\franka_tabletop_rl
+# from f:\IsaacLab. That package publishes the isaaclab.tasks entry point.
 
 [project]
 name = "task-franka-tabletop-rl"

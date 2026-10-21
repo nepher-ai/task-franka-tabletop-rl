@@ -13,7 +13,7 @@ out keeps every camera at the rendered size.
 from __future__ import annotations
 
 # Observation names, in the order the observation dict lists them.
-OBSERVATION_CAMERAS = ("cam_exterior_left", "cam_exterior_right", "cam_wrist")
+OBSERVATION_CAMERAS = ("cam_exterior_left", "cam_exterior_right", "cam_wrist", "cam_front")
 
 
 def requested_cameras(spec: dict | None) -> tuple[str, ...]:
@@ -46,3 +46,16 @@ def unused_cameras(spec: dict | None) -> tuple[str, ...]:
     """Observation cameras the brain does not read."""
     wanted = requested_cameras(spec)
     return tuple(name for name in OBSERVATION_CAMERAS if name not in wanted)
+
+
+def selected_cameras(names: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Observation cameras to keep, in observation order.
+
+    ``None`` and an empty sequence keep none.
+
+    Raises:
+        ValueError: A name is not an observation camera.
+    """
+    if not names:
+        return ()
+    return requested_cameras({"cameras": names})

@@ -23,13 +23,13 @@ sys.path.insert(0, str(PACKAGE))
 from franka_tabletop_rl.tabletop.scenes.catalog import ObjectAsset  # noqa: E402
 from franka_tabletop_rl.tabletop.scenes.composer import Placement, SceneInstance  # noqa: E402
 from franka_tabletop_rl.tabletop.spec import spec_from_success  # noqa: E402
-from franka_tabletop_rl.tasks.manager_based.hl_policy.classical_planner import (  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.classical_planner import (  # noqa: E402
     ClassicalTabletopPlanner,
     Stage,
     drop_offsets,
     reach_limit,
 )
-from franka_tabletop_rl.tasks.manager_based.hl_policy.grasp import (  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.grasp import (  # noqa: E402
     MAX_WIDTH_M,
     PALM_CLEARANCE_M,
     TOOL_Z_MIN_M,
