@@ -30,6 +30,31 @@ LOST_Z_M = -0.15
 LOST_RADIUS_M = 1.5
 
 
+def _commit_hold(
+    stored_latched: dict[str, bool],
+    stored_entered: list[str],
+    latched: dict[str, bool],
+    entered: list[str],
+    score: float,
+    hold_s: float,
+    dt: float,
+) -> tuple[dict[str, bool], list[str], float, bool]:
+    """Store a finished pose only after it has held for :data:`SUCCESS_HOLD_S`.
+
+    While the score stays at 1 the stored latch is left unchanged, so the next step scores the
+    pose again. A lower score stores partial progress and clears the hold.
+
+    Returns:
+        The latch, the entry order, the hold time [s], and whether the episode succeeded.
+    """
+    if score >= 1.0 - 1e-9:
+        hold_s += dt
+        if hold_s >= SUCCESS_HOLD_S:
+            return latched, entered, hold_s, True
+        return stored_latched, stored_entered, hold_s, False
+    return latched, entered, 0.0, False
+
+
 def _host(values) -> np.ndarray:
     values = values.torch if hasattr(values, "torch") else values
     return values.detach().cpu().numpy()
@@ -259,13 +284,19 @@ class TaskTracker:
                 gripper_open=bool(self.gripper_open[index]),
             )
             self.progress[index] = score
-            self.latched[index] = latched
-            self.entered[index] = entered
-            if score >= 1.0 - 1e-9:
-                self.hold_s[index] += dt
-            else:
-                self.hold_s[index] = 0.0
-            self.success_now[index] = self.hold_s[index] >= SUCCESS_HOLD_S
+            committed, order, hold, success = _commit_hold(
+                self.latched[index],
+                self.entered[index],
+                latched,
+                entered,
+                score,
+                float(self.hold_s[index]),
+                dt,
+            )
+            self.latched[index] = committed
+            self.entered[index] = order
+            self.hold_s[index] = hold
+            self.success_now[index] = success
             self.lost[index] = any(self.is_lost(self.root(index, slot)[0]) for slot in self.required[task])
         done = torch.as_tensor(self.success_now, device=self.device)
         self.completed |= done

@@ -93,3 +93,58 @@ def test_play_config_import_does_not_load_openusd():
     )
     completed = subprocess.run([sys.executable, "-c", script], check=False)
     assert completed.returncode == 0
+
+
+def test_a_finished_pose_is_latched_only_after_it_holds():
+    import pytest
+
+    pytest.importorskip("isaaclab")
+    from franka_tabletop_rl.benchmark.predicates import task_progress
+    from franka_tabletop_rl.benchmark.spec import spec_from_success
+    from franka_tabletop_rl.tasks.hl_policy.tracker import SUCCESS_HOLD_S, _commit_hold
+
+    placed = {"in_container:item:container": True}
+    stored, entered, hold, success = {}, [], 0.0, False
+    dt = 1.0 / 15.0
+    for _ in range(7):
+        stored, entered, hold, success = _commit_hold(stored, entered, placed, ["item"], 1.0, hold, dt)
+        assert stored == {}
+        assert success is False
+        assert hold < SUCCESS_HOLD_S
+    stored, entered, hold, success = _commit_hold(stored, entered, placed, ["item"], 1.0, hold, dt)
+    assert stored == placed
+    assert success is True
+    assert hold >= SUCCESS_HOLD_S
+
+    stored, entered, hold, success = {}, [], 0.0, False
+    stored, entered, hold, success = _commit_hold(stored, entered, placed, ["item"], 1.0, hold, dt)
+    partial = {"off:top:bottom": True}
+    stored, entered, hold, success = _commit_hold(stored, entered, partial, [], 0.5, hold, dt)
+    assert stored == partial
+    assert entered == []
+    assert hold == 0.0
+    assert success is False
+
+    spec = spec_from_success(
+        "t",
+        {"op": "in_container", "object": "cube", "container": "bin", "require_grasp": []},
+        40.0,
+        {"cube": "item", "bin": "container"},
+    )
+    poses = {
+        "item": {
+            "pos": np.array([[0.2, 0.0, 0.05]]),
+            "quat": np.array([[1.0, 0.0, 0.0, 0.0]]),
+            "half": np.array([0.02, 0.02, 0.02]),
+        },
+        "container": {
+            "pos": np.array([[0.8, 0.0, 0.05]]),
+            "quat": np.array([[1.0, 0.0, 0.0, 0.0]]),
+            "half": np.array([0.1, 0.1, 0.05]),
+        },
+    }
+    open_hand = {"item": False}
+    score, _, _ = task_progress(spec, poses, open_hand, open_hand, {}, [], gripper_open=True)
+    assert score == 0.0
+    score, _, _ = task_progress(spec, poses, open_hand, open_hand, placed, [], gripper_open=True)
+    assert score == 1.0
