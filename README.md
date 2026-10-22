@@ -76,7 +76,8 @@ recording and changes nothing else: the tasks, `--num_envs`, and layouts stay th
 `best_policy/videos/highlight/<camera>.mp4` for `cam_exterior_left`, `cam_exterior_right`, `cam_wrist`, and
 `cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one episode. The
 grid shows up to 16 tasks of the stage in benchmark order. A stage with more than 16 tasks shows 16 sampled with the
-seed. A stage with fewer leaves the remaining cells black. Only those envs are rendered, at the cell size.
+seed. A stage with fewer leaves the remaining cells black. Only those envs are rendered, at the cell size. The
+process exits after the four clips are written.
 
 ```bat
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 120 --viz none env.highlight=on

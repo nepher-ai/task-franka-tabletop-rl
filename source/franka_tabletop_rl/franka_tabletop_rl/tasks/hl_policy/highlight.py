@@ -7,7 +7,7 @@
 
 ``env.highlight=on`` records one mp4 per observation camera. Each frame is a 4 by 4 grid of up to 16
 tasks, 1280 by 720 [pixels], lasting one episode (``episode_length_s``). The files are
-``best_policy/videos/highlight/<camera>.mp4``.
+``best_policy/videos/highlight/<camera>.mp4``. Play exits once those files are written.
 
 The play stage is unchanged. A scene camera renders every env, so this renders only the highlighted
 envs, at the 320 by 180 [pixels] cell size. ``play_mode`` puts one camera config on the cfg so Kit
@@ -183,9 +183,14 @@ class Highlight:
             self.close()
 
     def close(self) -> None:
-        """Finish the clips and release the render products."""
+        """Finish the clips and release the render products.
+
+        A finished episode ends the process. The play loop otherwise keeps stepping after the
+        files are written.
+        """
         if self._closed:
             return
+        finished = self._count >= self._steps
         self._closed = True
         for name, writer in self._writers.items():
             writer.close()
@@ -193,6 +198,8 @@ class Highlight:
         for render_data in self._render_data:
             self._renderer.cleanup(render_data)
         self._render_data.clear()
+        if finished:
+            raise SystemExit(0)
 
     def _writer(self, name: str):
         writer = self._writers.get(name)
