@@ -8,6 +8,8 @@
 ``env.highlight=on`` records one mp4 per observation camera. Each frame is a 4 by 4 grid of up to 16
 tasks, 1280 by 720 [pixels], lasting one episode (``episode_length_s``). The files are
 ``best_policy/videos/highlight/<camera>.mp4``. Play exits once those files are written.
+``env.highlight_tasks=0-15`` films that inclusive range, and ``0,5,12`` films those indices, in the
+given order. Omit it and a stage with more than 16 tasks samples 16 of them with the seed.
 
 The play stage is unchanged. A scene camera renders every env, so this renders only the highlighted
 envs, at the 320 by 180 [pixels] cell size. ``play_mode`` puts one camera config on the cfg so Kit
@@ -70,21 +72,90 @@ def enable_rendering(sim) -> None:
     sim.set_setting("/physics/fabricUpdateTransformations", True)
 
 
-def highlight_envs(task_count: int, num_envs: int, seed: int, count: int = HIGHLIGHT_COUNT) -> tuple[int, ...]:
-    """Env indices to film, one per highlighted task, in benchmark order.
+def highlight_envs(
+    task_count: int,
+    num_envs: int,
+    seed: int,
+    count: int = HIGHLIGHT_COUNT,
+    tasks: Sequence[int] | int | str | None = None,
+) -> tuple[int, ...]:
+    """Env indices to film, one per highlighted task.
 
-    Env ``i`` runs task ``i % task_count``, so the first env of task ``k`` is env ``k``. A stage with
-    at most ``count`` tasks highlights all of them. A larger stage highlights ``count`` tasks sampled
+    Env ``i`` runs task ``i % task_count``, so the first env of task ``k`` is env ``k``. ``tasks``
+    selects those task indices in the given order. A string may list indices and inclusive ranges,
+    as in ``"0,5,12"`` or ``"0-15"``. An empty selection leaves the default: a stage with at most
+    ``count`` tasks highlights all of them, and a larger stage highlights ``count`` tasks sampled
     with ``seed``, then sorted back into benchmark order.
 
     Raises:
-        ValueError: The stage has no task or fewer envs than tasks.
+        ValueError: The stage has no task or fewer envs than tasks, or ``tasks`` is not a set of
+            at most 16 indices inside the stage.
     """
     if task_count <= 0 or num_envs < task_count:
         raise ValueError(f"highlight needs at least one env per task, got {num_envs} envs for {task_count} tasks")
+    selected = _selected_tasks(tasks)
+    if selected is not None:
+        if len(selected) > HIGHLIGHT_COUNT:
+            raise ValueError(f"highlight shows at most {HIGHLIGHT_COUNT} tasks, got {len(selected)}")
+        if len(selected) != len(set(selected)):
+            raise ValueError(f"highlight task indices must be unique, got {selected}")
+        outside = [index for index in selected if index < 0 or index >= task_count]
+        if outside:
+            raise ValueError(f"highlight task indices must be in [0, {task_count}), got {outside}")
+        return selected
     if task_count <= count:
         return tuple(range(task_count))
     return tuple(sorted(random.Random(seed).sample(range(task_count), count)))
+
+
+def _selected_tasks(tasks: Sequence[int] | int | str | None) -> tuple[int, ...] | None:
+    """Task indices from the CLI, or None when the selection is empty and the sample should run."""
+    if tasks is None:
+        return None
+    if isinstance(tasks, str):
+        chosen = _parse_task_spec(tasks)
+    elif isinstance(tasks, int) and not isinstance(tasks, bool):
+        chosen = [tasks]
+    else:
+        chosen = []
+        for value in tasks:
+            if isinstance(value, str):
+                chosen.extend(_parse_task_spec(value))
+            elif isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"highlight task indices must be integers or ranges like 0-15, got {value!r}")
+            else:
+                chosen.append(value)
+    if not chosen:
+        return None
+    return tuple(chosen)
+
+
+def _parse_task_spec(spec: str) -> list[int]:
+    """Expand ``0,5,12`` and inclusive ranges such as ``0-15`` into task indices."""
+    chosen = []
+    for part in spec.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        bounds = token.split("-")
+        if len(bounds) == 1:
+            chosen.append(_task_index(bounds[0]))
+            continue
+        if len(bounds) == 2 and bounds[0].strip() and bounds[1].strip():
+            start, end = _task_index(bounds[0]), _task_index(bounds[1])
+            step = 1 if end >= start else -1
+            chosen.extend(range(start, end + step, step))
+            continue
+        raise ValueError(f"highlight task indices must be integers or ranges like 0-15, got {token!r}")
+    return chosen
+
+
+def _task_index(token: str) -> int:
+    """One non-negative task index."""
+    token = token.strip()
+    if not token.isdigit():
+        raise ValueError(f"highlight task indices must be integers or ranges like 0-15, got {token!r}")
+    return int(token)
 
 
 def episode_steps(episode_length_s: float, step_dt: float) -> int:

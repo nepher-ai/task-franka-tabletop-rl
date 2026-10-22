@@ -36,7 +36,9 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         cfg.stage_plan = plan
         self._highlight_envs = ()
         if isinstance(cfg.highlight, HighlightCfg):
-            self._highlight_envs = highlight_envs(len(cfg.task_ids), plan.num_envs, int(cfg.seed or 0))
+            self._highlight_envs = highlight_envs(
+                len(cfg.task_ids), plan.num_envs, int(cfg.seed or 0), tasks=cfg.highlight_tasks
+            )
         with planned_worlds(plan):
             super().__init__(cfg, render_mode, **kwargs)
         if self._highlight_envs:

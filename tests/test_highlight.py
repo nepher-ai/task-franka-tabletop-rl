@@ -71,6 +71,38 @@ def test_highlight_needs_an_env_for_every_task():
         highlight_envs(20, 10, seed=1)
 
 
+def test_highlight_tasks_keeps_the_given_indices_in_that_order():
+    assert highlight_envs(40, 80, seed=1, tasks=(12, 0, 3)) == (12, 0, 3)
+    assert highlight_envs(40, 80, seed=1, tasks=[2]) == (2,)
+    assert highlight_envs(40, 80, seed=1, tasks=4) == (4,)
+    assert highlight_envs(5, 10, seed=7, tasks=(4, 1)) == (4, 1)
+    assert highlight_envs(40, 80, seed=1, tasks="0-15") == tuple(range(16))
+    assert highlight_envs(40, 80, seed=1, tasks="12,0,3") == (12, 0, 3)
+    assert highlight_envs(40, 80, seed=1, tasks="0-2,5") == (0, 1, 2, 5)
+    assert highlight_envs(40, 80, seed=1, tasks="3-1") == (3, 2, 1)
+
+
+def test_an_empty_highlight_task_list_keeps_the_seeded_sample():
+    assert highlight_envs(40, 80, seed=1, tasks=()) == highlight_envs(40, 80, seed=1)
+    assert highlight_envs(40, 80, seed=1, tasks=None) == highlight_envs(40, 80, seed=1)
+    assert highlight_envs(5, 10, seed=7, tasks=()) == tuple(range(5))
+
+
+def test_highlight_tasks_must_fit_the_stage_and_the_grid():
+    with pytest.raises(ValueError, match="at most"):
+        highlight_envs(40, 80, seed=1, tasks=tuple(range(HIGHLIGHT_COUNT + 1)))
+    with pytest.raises(ValueError, match="unique"):
+        highlight_envs(40, 80, seed=1, tasks=(1, 1))
+    with pytest.raises(ValueError, match=r"\[0, 40\)"):
+        highlight_envs(40, 80, seed=1, tasks=(40,))
+    with pytest.raises(ValueError, match="integers or ranges"):
+        highlight_envs(40, 80, seed=1, tasks="0-")
+    with pytest.raises(ValueError, match="integers or ranges"):
+        highlight_envs(40, 80, seed=1, tasks=(1, "no"))
+    with pytest.raises(ValueError, match="at least one env per task"):
+        highlight_envs(20, 10, seed=1, tasks=(0,))
+
+
 def test_episode_steps_matches_the_control_rate():
     assert episode_steps(40.0, 1.0 / 15.0) == 600
 

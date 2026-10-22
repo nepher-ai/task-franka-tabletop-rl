@@ -72,7 +72,9 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
             stay either way, so a Kit window shows the benchmark stage.
         highlight: ``on`` records highlight videos of up to 16 tasks and changes nothing else. Pass it as
-            ``env.highlight=on``.
+            ``env.highlight=on``. ``highlight_tasks`` films those task indices in that order, for example
+            ``env.highlight_tasks=0-15`` or ``env.highlight_tasks=0,5,12``. An empty selection keeps the
+            seeded sample.
     """
 
     scene: TabletopSceneCfg = TabletopSceneCfg(num_envs=1, env_spacing=2.5)
@@ -90,6 +92,11 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     """Observation cameras to spawn. Empty spawns none."""
     layout_seed: int = 1
     highlight: HighlightPreset = HighlightPreset()
+    highlight_tasks: tuple[int, ...] = ()
+    """Task indices to film when highlight is on, as indices or an inclusive range such as ``0-15``.
+
+    Empty samples up to 16 tasks with the seed.
+    """
     task_ids: tuple[str, ...] = ()
     """Tasks of the stage, filled from ``task_id``."""
     stage_plan: object | None = None
