@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The evaluator reads outcome flags as tensors, and a phase barrier reports the finished task."""
+"""The evaluator reads outcome flags as tensors and the task each env finished."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
 sys.path.insert(0, str(PACKAGE))
 
 from franka_tabletop_rl.tasks.hl_policy.eval_compat import wrap_for_eval  # noqa: E402
-from franka_tabletop_rl.tasks.hl_policy.phases import PhaseBarrier  # noqa: E402
 
 
 class _Env:
@@ -30,9 +29,7 @@ class _Env:
             failed=torch.zeros(count, dtype=torch.bool),
             progress=np.zeros(count),
             last_task_ids=[f"task-{index}" for index in range(count)],
-            holding=np.zeros(count, dtype=bool),
             finished_steps=np.full(count, -1),
-            plan=SimpleNamespace(phase_count=1),
             instruction=lambda index: f"task {index}",
             prepare_reset=lambda: None,
             episode_finished=lambda: None,
@@ -69,52 +66,14 @@ def test_outcomes_are_tensors_that_survive_steps_and_clear_on_reset():
     assert not bool(wrapped.task_completed.any())
 
 
-def test_wrapper_reports_the_finished_task_and_holds_for_a_barrier():
+def test_wrapper_reports_the_task_each_env_finished():
     env = _Env(2)
-    env.tracker.plan.phase_count = 2
-    env.tracker.holding[0] = True
     env.tracker.finished_steps[0] = 12
-    env.tracker.episode_finished = lambda: env.tracker.holding.copy()
     wrapped = wrap_for_eval(env)
     assert wrapped.episode_task_ids() == ["task-0", "task-1"]
-    assert wrapped.episode_finished().tolist() == [True, False]
+    assert wrapped.episode_finished() is None
     assert wrapped.episode_steps().tolist() == [12, -1]
     assert wrapped.instructions() == ["task 0", "task 1"]
-
-
-def test_barrier_holds_finished_envs_until_every_env_is_done():
-    tracker = SimpleNamespace(
-        num_envs=2,
-        plan=SimpleNamespace(phase_count=2),
-        phase=0,
-        holding=np.zeros(2, dtype=bool),
-        success_now=np.array([True, False]),
-        lost=np.zeros(2, dtype=bool),
-        _steps=np.zeros(2, dtype=int),
-        finished_steps=np.full(2, -1),
-        last_task_ids=["a", "b"],
-        task_ids=("a", "b"),
-        task_index=np.array([0, 1]),
-    )
-
-    def mark_held(index):
-        tracker.holding[index] = True
-        tracker.finished_steps[index] = int(tracker._steps[index])
-        tracker.last_task_ids[index] = tracker.task_ids[int(tracker.task_index[index])]
-
-    def queue_phase(phase):
-        tracker.queued = phase
-
-    tracker.mark_held = mark_held
-    tracker.queue_phase = queue_phase
-    held = []
-    planner = SimpleNamespace(hold=lambda index: held.append(index))
-    barrier = PhaseBarrier(tracker, planner)
-    assert barrier.update(np.array([4, 4]), 10) is False
-    assert held == [0]
-    tracker.success_now[1] = True
-    assert barrier.update(np.array([5, 5]), 10) is True
-    assert tracker.queued == 1
 
 
 def test_play_config_import_does_not_load_openusd():

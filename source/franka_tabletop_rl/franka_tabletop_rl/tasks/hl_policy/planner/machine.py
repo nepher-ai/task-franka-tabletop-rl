@@ -199,13 +199,6 @@ class ClassicalTabletopPlanner:
                 self._warn(self.tracker.task_ids[self._task(index)])
             self.contexts[index] = context
 
-    def hold(self, index: int) -> None:
-        """Stop env ``index`` where it is. A finished phase waits here for the others."""
-        context = self.contexts[int(index)]
-        context.stage = Stage.DONE
-        context.grip = 1.0 if context.keep_grip else 0.0
-        context.target = np.array([HOME[0], HOME[1], SAFE_Z_M])
-
     # ------------------------------------------------------------------ geometry
 
     def _anchor(self, slot: str, index: int):

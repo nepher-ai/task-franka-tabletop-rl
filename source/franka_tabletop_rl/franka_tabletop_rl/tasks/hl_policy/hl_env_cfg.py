@@ -8,7 +8,7 @@
 The env is the benchmark tabletop (robot, physics, tasks, scoring) with the low-level tracker's
 observation and action. The planner is a command term, so the tracker checkpoint is the only policy
 that the evaluator loads. One stage holds every selected task: ``task_id`` is ``"all"`` or one task
-id, as eval-nav passes it. Backgrounds run as phases of that one stage.
+id, as eval-nav passes it. The stage names one background. Another benchmark can name a different one.
 """
 
 from __future__ import annotations
@@ -52,7 +52,6 @@ class TerminationsCfg:
     success = DoneTerm(func=mdp.task_success)
     object_lost = DoneTerm(func=mdp.object_lost)
     time_out = DoneTerm(func=mdp.episode_timeout, time_out=True)
-    phase_barrier = DoneTerm(func=mdp.phase_barrier)
 
 
 @configclass
@@ -67,8 +66,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     Args:
         env_id: EnvHub id. Assets are loaded from that id's nepher cache.
         task_id: ``"all"`` for every task of the benchmark, or one task id (for example
-            ``cubes_and_blocks_in_bin``). ``scene.num_envs`` must be at least the largest background
-            group. It defaults to that size.
+            ``cubes_and_blocks_in_bin``). ``scene.num_envs`` defaults to one env per selected task.
+            A larger count has to be a multiple of that number, so every task runs together.
         pose_jitter_m: Per-episode shift [m] of each object in the table plane. Zero is the benchmark layout.
         cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
             stay either way, so a Kit window shows the benchmark stage.
@@ -105,13 +104,9 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         bundle = resolve_bundle(self.env_id)
         benchmark = load_benchmark(bundle)
         self.task_ids = benchmark.select(str(self.task_id))
-        # Bodies are mounted once num_envs is final. The dome starts on the first task's background.
-        apply_stage_assets(self, bundle, benchmark.stage, benchmark.task(self.task_ids[0]).background)
-        counts: dict[str, int] = {}
-        for task_id in self.task_ids:
-            name = benchmark.task(task_id).background
-            counts[name] = counts.get(name, 0) + 1
-        self.scene.num_envs = max(counts.values())
+        # Bodies are mounted once num_envs is final. The dome is the stage background.
+        apply_stage_assets(self, bundle, benchmark.stage)
+        self.scene.num_envs = len(self.task_ids)
         keep = selected_cameras(self.cameras)
         self.cameras = keep
         for name in OBSERVATION_CAMERAS:
@@ -139,4 +134,4 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
 
 @configclass
 class HLEnvCfg_PLAY(HLEnvCfg):
-    """Evaluation layout of the benchmark: one env per task, or more copies through ``scene.num_envs``."""
+    """Evaluation layout: one env per task, or a whole number of extra copies through ``scene.num_envs``."""

@@ -11,7 +11,7 @@ observation (joint position, gripper, tool pose, camera frames) and the absolute
 the tracker's IK action produced, so a brain trained on it acts in the benchmark's action space.
 
 Examples, from the Isaac Lab root:
-    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --episodes 8 --num_envs 32
+    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --episodes 8 --num_envs 120
     isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --cameras cam_wrist cam_front --episodes 8
 """
 
@@ -26,7 +26,10 @@ parser.add_argument("--task", type=str, default=None, help="One benchmark task i
 parser.add_argument("--output", type=str, required=True, help="Dataset directory. An existing dataset is extended.")
 parser.add_argument("--episodes", type=int, default=8, help="Successful episodes to record per task.")
 parser.add_argument(
-    "--num_envs", type=int, default=None, help="Parallel envs, a multiple of the task count. One per task by default."
+    "--num_envs",
+    type=int,
+    default=None,
+    help="Parallel envs. A multiple of the task count. One copy of each task by default.",
 )
 parser.add_argument("--jitter", type=float, default=0.04, help="Per-episode shift [m] of each object.")
 parser.add_argument("--seed", type=int, default=1, help="Seed of the first layout.")

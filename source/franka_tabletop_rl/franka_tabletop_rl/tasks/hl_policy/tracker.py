@@ -5,10 +5,9 @@
 
 """Per-env task state of the hierarchical environment.
 
-One stage holds every selected task. With one background, env ``i`` runs task ``i % T`` and resets
-on its own. With several backgrounds, env ``i`` runs one task per phase and a finished env holds
-until every env has finished. Scoring uses the benchmark predicates, so a task counts as solved
-here exactly when the brain benchmark counts it.
+One stage holds every selected task. Env ``i`` runs task ``i % T`` and resets on its own. The dome
+is the benchmark's one background. Scoring uses the benchmark predicates, so a task counts as
+solved here exactly when the brain benchmark counts it.
 """
 
 from __future__ import annotations
@@ -59,7 +58,6 @@ class TaskTracker:
             raise ValueError("layouts and plan.task_ids must name the same tasks")
         self.specs = tuple(layout.spec for layout in self.task_layouts)
         self.phase = 0
-        self._pending_phase: int | None = None
         self.task_index = np.array(plan.assignment[0], dtype=int)
         self.entities = plan.entities
         self._entity_slots = [
@@ -82,7 +80,6 @@ class TaskTracker:
         self.last_success = np.zeros(self.num_envs, dtype=bool)
         self.last_progress = np.zeros(self.num_envs, dtype=np.float64)
         self.last_task_ids = [self.task_id_of(index) for index in range(self.num_envs)]
-        self.holding = np.zeros(self.num_envs, dtype=bool)
         self.finished_steps = np.full(self.num_envs, -1, dtype=int)
         self._steps = np.zeros(self.num_envs, dtype=int)
         self.completed = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -119,15 +116,14 @@ class TaskTracker:
         return self.env_layouts[index].instruction
 
     def entity(self, index: int, slot: str) -> str:
-        """Scene body that holds ``slot`` in env ``index`` during the current phase."""
+        """Scene body that holds ``slot`` in env ``index``."""
         return self.plan.phase_slots[self.phase][index][slot]
 
     def sample_env(self, task: int) -> tuple[int, int]:
-        """``(phase, env)`` whose body carries task ``task``, for mesh sampling."""
-        for phase, row in enumerate(self.plan.assignment):
-            for env, assigned in enumerate(row):
-                if assigned == task:
-                    return phase, env
+        """``(0, env)`` whose body carries task ``task``, for mesh sampling."""
+        for env, assigned in enumerate(self.plan.assignment[0]):
+            if assigned == task:
+                return 0, env
         raise RuntimeError(f"no env runs task {self.task_ids[task]}")
 
     def root(self, index: int, slot: str) -> tuple[np.ndarray, np.ndarray]:
@@ -139,30 +135,17 @@ class TaskTracker:
         """True while a finger presses the slot's body in env ``index``."""
         return bool(self.contact[self.entity(index, slot)][index])
 
-    def queue_phase(self, phase: int) -> None:
-        """Switch to ``phase`` on the next reset of every env."""
-        self._pending_phase = int(phase)
-
     def note_step(self, lengths) -> None:
         """Remember each env's episode length [steps], used when an env finishes early."""
         self._steps = np.asarray(lengths, dtype=int).reshape(-1)
 
-    def mark_held(self, index: int) -> None:
-        """Env ``index`` has finished this phase and holds until the others do."""
-        if self.holding[index]:
-            return
-        self.holding[index] = True
-        self.finished_steps[index] = int(self._steps[index])
-        self.last_task_ids[index] = self.task_id_of(index)
-
     def prepare_reset(self) -> None:
         """Forget the previous episode's finish marks. An explicit evaluator reset calls this."""
-        self.holding[:] = False
         self.finished_steps[:] = -1
         self._active = False
 
     def begin(self, env_ids: torch.Tensor | slice | None, seed: int | None = None) -> None:
-        """Lay the current phase out in ``env_ids`` and clear their scoring state."""
+        """Lay the current tasks out in ``env_ids`` and clear their scoring state."""
         if env_ids is None or isinstance(env_ids, slice):
             ids = list(range(self.num_envs))
         else:
@@ -174,12 +157,6 @@ class TaskTracker:
                     self.last_task_ids[index] = self.task_id_of(index)
                 self.last_success[index] = self.success_now[index]
                 self.last_progress[index] = self.progress[index]
-        switched = False
-        if self._pending_phase is not None:
-            self.phase = self._pending_phase
-            self._pending_phase = None
-            self.task_index = np.array(self.plan.assignment[self.phase], dtype=int)
-            switched = True
         self._active = True
         for index in ids:
             self._episodes += 1
@@ -194,46 +171,19 @@ class TaskTracker:
             self.progress[index] = 0.0
             self.lost[index] = False
             self.success_now[index] = False
-            self.holding[index] = False
         self._write_layout(ids)
-        if switched:
-            self._swap_dome()
         self._updated_at = -1
 
-    def _swap_dome(self) -> None:
-        """Point the one stage dome at this phase's background."""
-        from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
-        from franka_tabletop_rl.benchmark.stage import resolve_background
-        from franka_tabletop_rl.scene.background import apply_dome
-        from franka_tabletop_rl.scene.scene_cfg import bundle_file
-
-        bundle = resolve_bundle(self.env.cfg.env_id)
-        dome = resolve_background(load_benchmark(bundle).stage, self.plan.phases[self.phase])
-        apply_dome(
-            bundle_file(bundle, dome["texture"]),
-            float(dome.get("intensity", 500.0)),
-            str(dome.get("texture_format", "latlong")),
-            visible=bool(dome.get("visible_in_primary_ray", True)),
-        )
-        cameras = tuple(getattr(self.env.cfg, "cameras", ()) or ())
-        if cameras or getattr(self.env.cfg, "highlight", None) is not None:
-            render = getattr(self.env.sim, "render", None)
-            if render is not None:
-                for _ in range(3):
-                    render()
-
     def episode_finished(self):
-        """Envs holding for the phase barrier, or ``None`` when each env resets on its own."""
-        if self.plan.phase_count == 1:
-            return None
-        return self.holding.copy()
+        """``None``. Each env resets on its own, so there is no shared finish mask."""
+        return
 
     def episode_steps(self) -> np.ndarray:
         """Steps each env had run when it finished. ``-1`` means it has not finished."""
         return self.finished_steps.copy()
 
     def _write_layout(self, ids: list[int]) -> None:
-        """Pose every body: this phase's objects, parked spares, and the active work surface."""
+        """Pose every body: this env's objects, parked spares, and the work surface."""
         env_ids = torch.tensor(ids, device=self.device)
         inverse = self._entity_slots[self.phase]
         for entity_index, entity in enumerate(self.entities):

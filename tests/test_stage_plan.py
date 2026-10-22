@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Stage plans for one, three, and five backgrounds."""
+"""Stage plans: one background, env i runs task i % T."""
 
 from __future__ import annotations
 
@@ -41,17 +41,10 @@ def _layout(task_id: str, background: str, count: int, surface: str = "oak") -> 
     return TaskLayout(task_id, "lay", background, surface, f"do {task_id}", placements)
 
 
-def _loads(plan, layouts) -> list[int]:
-    totals = [0] * plan.num_envs
-    for row in plan.assignment:
-        for env, task in enumerate(row):
-            totals[env] += len(layouts[task].placements)
-    return totals
-
-
 def test_one_background_keeps_todays_mapping():
     layouts = [_layout(f"t{index}", "office", 2) for index in range(4)]
     plan = plan_stage(layouts, _stage(["office"]), 8)
+    assert plan.phases == ("office",)
     assert plan.phase_count == 1
     assert plan.assignment[0] == tuple(index % 4 for index in range(8))
     assert plan.env_spacing == 2.5
@@ -62,26 +55,27 @@ def test_one_background_keeps_todays_mapping():
     assert again.choices == plan.choices
 
 
-def test_three_and_five_backgrounds_cover_every_task_and_do_not_overlap_parking():
-    for count in (3, 5):
-        names = [f"bg{index}" for index in range(count)]
-        layouts = []
-        for name in names:
-            for index in range(3):
-                layouts.append(_layout(f"{name}-{index}", name, 2))
-        plan = plan_stage(layouts, _stage(names), 4)
-        assert plan.phase_count == count
-        for phase, name in enumerate(names):
-            seen = {layouts[task].task_id for task in plan.assignment[phase]}
-            assert seen == {f"{name}-{index}" for index in range(3)}
-        spots = plan.parking[0]
-        assert len(spots) == len(set(spots))
-        loads = _loads(plan, layouts)
-        assert max(loads) - min(loads) <= 2
-        assert plan_stage(layouts, _stage(names), 4).assignment == plan.assignment
+def test_task_backgrounds_do_not_split_the_stage():
+    layouts = [
+        _layout("a", "office", 2),
+        _layout("b", "hall", 1),
+        _layout("c", "studio", 3),
+    ]
+    stage = _stage(["office", "hall", "studio"])
+    stage["background"] = "hall"
+    plan = plan_stage(layouts, stage, 3)
+    assert plan.phases == ("hall",)
+    assert plan.assignment[0] == (0, 1, 2)
+    assert plan.env_spacing == 2.5
+    assert plan.surface_entities == ("surface",)
+    wider = plan_stage(layouts, stage, 6)
+    assert wider.assignment[0] == (0, 1, 2, 0, 1, 2)
 
 
-def test_too_few_envs_raises():
+def test_num_envs_must_be_a_multiple_of_the_task_count():
     layouts = [_layout(f"t{index}", "office", 1) for index in range(3)]
-    with pytest.raises(ValueError, match="at least 3"):
-        plan_stage(layouts, _stage(["office"]), 2)
+    stage = _stage(["office"])
+    for count in (0, 2, 4):
+        with pytest.raises(ValueError, match="multiple of the task count"):
+            plan_stage(layouts, stage, count)
+    assert plan_stage(layouts, stage, 6).assignment[0] == (0, 1, 2, 0, 1, 2)

@@ -32,11 +32,11 @@ Both high-level tasks load the benchmark named by `env_id`. The default is `fran
 16 tasks as before, in the same file format.
 
 **One stage, all tasks.** The high-level env builds one stage for the selected tasks (`env.task_id=all`, or one task id).
-Tasks that share a background run together as one phase. `--num_envs` must be at least the largest background group
-(16 for v0, 44 for v1). With one background, env `i` runs task `i % T` and resets on its own. With several, a finished
-env holds until every env has finished; the dome then swaps, each env takes its next task, and they all reset. Objects
-the current phase does not use sit on a shelf outside the cameras. Because every env owns its meshes, the cloner builds
-one world per env (`replicate_physics=False`).
+Each benchmark has one background, named by its stage. Another benchmark can name a different background. `scene.num_envs`
+defaults to one env per task. `--num_envs` is that count or a whole multiple of it (`120`, `240`, ... for v1; `16`, `32`,
+`64`, ... for v0). Env `i` runs task `i % T` and resets on its own, and every task is in the stage together.
+Unused object positions rest above the cameras. Because every env owns its meshes, the cloner builds one world per env
+(`replicate_physics=False`).
 
 `isaaclab.bat train` and `play` discover these through the `isaaclab.tasks` entry point.
 
@@ -55,12 +55,13 @@ The second line adds the LeRobot writer. TensorBoard logs are under this project
 ## Train and play
 
 Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a window. Playback runs until Ctrl+C.
-`--num_envs` for a high-level task must be at least the largest background group. One task is `env.task_id=<task_id>`.
+`--num_envs` for a high-level task defaults to one env per task, and a larger value has to be a multiple of that count.
+One task is `env.task_id=<task_id>`.
 
 ```bat
 .\isaaclab.bat train --task Nepher-FrankaTabletopRL-LL-v0 --num_envs 4096 --max_iterations 1500 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-LL-Play-v0 --num_envs 64 --viz none
-.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 120 --viz none
 .\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 4 env.task_id=throw_away_apple --viz none
 ```
 
@@ -73,23 +74,24 @@ Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a windo
 `env.highlight=on` on `Nepher-FrankaTabletopRL-HL-Play-v0` or `Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0` adds video
 recording and changes nothing else: the tasks, `--num_envs`, and layouts stay those of the same command. It writes
 `best_policy/videos/highlight/<camera>.mp4` for `cam_exterior_left`, `cam_exterior_right`, `cam_wrist`, and
-`cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one episode per background phase. The
+`cam_front`. Each is 1280x720, a 4x4 grid of 320x180 cells, and lasts one episode. The
 grid shows up to 16 tasks of the stage in benchmark order. A stage with more than 16 tasks shows 16 sampled with the
 seed. A stage with fewer leaves the remaining cells black. Only those envs are rendered, at the cell size.
 
 ```bat
-.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none env.highlight=on
+.\isaaclab.bat play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 120 --viz none env.highlight=on
 ```
 
 ### Dataset for brains
 
 `scripts/record_lerobot.py` runs the planner and the tracker, and keeps the successful episodes as a LeRobot v2.1 dataset
 (`--cameras` records every camera as h264 video, and `--cameras cam_wrist cam_front` records those). It records all tasks at once, or one with `--task <task_id>`.
-`--episodes` is the number of successful episodes kept per task, and `--num_envs` at least the largest background group.
+`--episodes` is the number of successful episodes kept per task. `--num_envs` defaults to one env per task, and a
+larger value must be a multiple of the task count.
 It also copies the tracker it used to `best_policy/best_policy.pt`.
 
 ```bat
-.\isaaclab.bat -p source\task-franka-tabletop-rl\scripts\record_lerobot.py --episodes 8 --num_envs 32 --output datasets\tabletop_rl
+.\isaaclab.bat -p source\task-franka-tabletop-rl\scripts\record_lerobot.py --episodes 8 --output datasets\tabletop_rl
 .\isaaclab.bat -p source\task-franka-tabletop-rl\scripts\replay_check.py --dataset datasets\tabletop_rl --episode 0
 ```
 
@@ -105,8 +107,9 @@ recorded with `--jitter 0` in `task-franka-tabletop`'s own `TabletopEvalEnv`.
 
 ### eval-nav
 
-`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates the 16 tasks of v0. `task-franka-tabletop-rl-v1.yaml` evaluates
-all 120 tasks: `num_envs` at least 44 and `num_episodes` a multiple of the three background phases. The scorer
+`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates the 16 tasks of v0 with 64 envs, four copies of each task.
+`task-franka-tabletop-rl-v1.yaml` evaluates all 120 tasks of v1 with one env each. `num_envs` is a multiple of the task
+count, and each env resets on its own. The scorer
 `manipulation.multitask.rl` (`episode = success * (0.75 + 0.25 * speed)`) reads the task id of the episode each env
 just finished. The task module's `task_ids_of` tells eval-nav which tasks a bundle runs. The brain-runtime configs
 for `v11` to `v13` are untouched.

@@ -71,7 +71,7 @@ def _source(root: Path, tasks: list[tuple[str, str, str]]) -> None:
 
 def test_a_built_bundle_round_trips(tmp_path: Path):
     source = tmp_path / "src"
-    _source(source, [("alpha", "lay", "home_office"), ("beta", "lay", "home_office")])
+    _source(source, [("alpha", "lay", "hall"), ("beta", "lay", "studio")])
     out = tmp_path / "out"
     assert build_bundle(source, out, "demo", "0.1.0", None) == 2
     benchmark = load_benchmark(out)
@@ -85,8 +85,12 @@ def test_a_built_bundle_round_trips(tmp_path: Path):
     assert benchmark.task_ids == tuple(written)
     for task_id in benchmark.task_ids:
         payload = json.loads((out / "tasks" / f"{task_id}.json").read_text(encoding="utf-8"))
-        assert payload["layout"] and payload["instruction"] and payload["background"]
+        assert payload["layout"] and payload["instruction"]
+        assert payload["background"] == "home_office"
         assert "scene_id" not in payload
+    written_stage = json.loads((out / "assets" / "stage.json").read_text(encoding="utf-8"))
+    assert written_stage["background"] == "home_office"
+    assert [record["name"] for record in written_stage["backgrounds"]] == ["home_office"]
     manifest = yaml.safe_load((out / "manifest.yaml").read_text(encoding="utf-8"))
     assert "preset_scenes" not in manifest
     assert manifest["version"] == "0.1.0"
@@ -104,3 +108,23 @@ def test_cached_v1_index_matches_its_files(requires_bundle):
     assert task_ids_of("franka-tabletop-rl-v1", ALL_TASKS) == list(benchmark.task_ids)
     assert task_ids_of("franka-tabletop-rl-v1", benchmark.task_ids[0]) == [benchmark.task_ids[0]]
     assert task_ids_of("franka-tabletop-rl-v1", "not_a_task") is None
+
+
+def test_background_argument_selects_the_dome(tmp_path: Path):
+    source = tmp_path / "src"
+    _source(source, [("alpha", "lay", "home_office"), ("beta", "lay", "home_office")])
+    stage_path = source / "assets" / "stage.json"
+    stage = json.loads(stage_path.read_text(encoding="utf-8"))
+    stage["backgrounds"].append({"name": "hall", "texture": "assets/backgrounds/hall.png"})
+    stage_path.write_text(json.dumps(stage), encoding="utf-8")
+    (source / "assets" / "backgrounds" / "hall.png").write_text("png", encoding="utf-8")
+    out = tmp_path / "out"
+    assert build_bundle(source, out, "demo", "1.0.0", None, background="hall") == 2
+    for task_id in ("alpha", "beta"):
+        payload = json.loads((out / "tasks" / f"{task_id}.json").read_text(encoding="utf-8"))
+        assert payload["background"] == "hall"
+    written = json.loads((out / "assets" / "stage.json").read_text(encoding="utf-8"))
+    assert written["background"] == "hall"
+    assert [record["name"] for record in written["backgrounds"]] == ["hall"]
+    assert (out / "assets" / "backgrounds" / "hall.png").is_file()
+    assert not (out / "assets" / "backgrounds" / "office.png").exists()

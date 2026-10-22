@@ -21,11 +21,7 @@ class HLTabletopEnv(ManagerBasedRLEnv):
     ``scene.num_envs`` is only final when the env is built, because eval-nav sets it after it
     creates the cfg. The stage plan and the bodies are built here, before the scene is cloned.
 
-    ``env.highlight=on`` records up to 16 tasks. With several backgrounds the clip covers one
-    episode of each phase.
-
-    Raises:
-        ValueError: ``scene.num_envs`` is smaller than the largest background group.
+    ``env.highlight=on`` records up to 16 tasks for one episode.
     """
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
@@ -44,7 +40,7 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         with planned_worlds(plan):
             super().__init__(cfg, render_mode, **kwargs)
         if self._highlight_envs:
-            length = float(cfg.episode_length_s) * plan.phase_count
+            length = float(cfg.episode_length_s)
             self.video_recorders.append(Highlight(self, self._highlight_envs, length))
 
     def _init_sim(self):

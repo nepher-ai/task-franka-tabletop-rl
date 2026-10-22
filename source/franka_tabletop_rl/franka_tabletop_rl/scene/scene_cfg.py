@@ -23,7 +23,6 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 
 from franka_tabletop_rl.benchmark.stage import (
-    choice,
     read_stage,
     resolve_background,
     resolve_surface,
@@ -217,17 +216,6 @@ def mount_stage(cfg, bundle: Path, stage: dict, plan: StagePlan) -> None:
         setattr(cfg.scene, name, body)
     if SURFACE_ENTITY not in plan.surface_entities:
         cfg.scene.surface = None
-    if plan.phase_count > 1:
-        span = max(plan.env_spacing - 0.4, 0.5)
-        cfg.scene.shelf = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/shelf",
-            spawn=sim_utils.CuboidCfg(
-                size=(span, span, 0.02),
-                rigid_props=sim_utils.UsdPhysicsRigidBodyCfg(kinematic_enabled=True),
-                collision_props=sim_utils.UsdPhysicsCollisionCfg(),
-            ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 2.4)),
-        )
     filters = ["{ENV_REGEX_NS}/" + name for name in plan.entities]
     cfg.scene.gripper_left.filter_prim_paths_expr = filters
     cfg.scene.gripper_right.filter_prim_paths_expr = filters
@@ -274,11 +262,6 @@ def _variant_spawn(bundle: Path, variant: ObjectVariant | None):
         collision_props=sim_utils.UsdPhysicsCollisionCfg(),
     )
     return _tune_spawn(spawn, variant.scale, variant.kinematic)
-
-
-def default_background(stage: dict, payload: dict | None = None) -> str | None:
-    """Background name a task file picks, or ``None`` for the stage default."""
-    return choice(payload or {}, "background")
 
 
 def read_stage_file(bundle: Path) -> dict:

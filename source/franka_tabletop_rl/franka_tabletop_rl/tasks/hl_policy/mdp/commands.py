@@ -25,7 +25,6 @@ from franka_tabletop_rl.benchmark.bundle import DEFAULT_ENV_ID, load_benchmark, 
 from franka_tabletop_rl.frames import EE_BODY, grip_down_quat, tcp_pose_b
 from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
 
-from ..phases import PhaseBarrier
 from ..planner import ClassicalTabletopPlanner, build_planner
 from ..tracker import TaskTracker
 
@@ -58,7 +57,6 @@ class HLPoseCommand(CommandTerm):
             seed=cfg.layout_seed,
         )
         self.planner: ClassicalTabletopPlanner = build_planner(env, self.tracker)
-        self.barrier = PhaseBarrier(self.tracker, self.planner)
         self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
         self.pose_command_b[:, 2] = 0.26
         self.pose_command_b[:, 3:] = grip_down_quat(torch.zeros(1, device=self.device))[0]
@@ -76,7 +74,6 @@ class HLPoseCommand(CommandTerm):
             ids = torch.arange(self.num_envs, device=self.device)
         else:
             ids = torch.as_tensor(env_ids, device=self.device)
-        self.barrier.on_reset()
         self.planner.reset(ids.cpu().numpy())
         self.grip_target[ids] = 0.0
         return extras
@@ -92,7 +89,6 @@ class HLPoseCommand(CommandTerm):
     def _update_command(self):
         self.tracker.update()
         self.tracker.note_step(self._env.episode_length_buf.detach().cpu().numpy())
-        self.barrier.update(self.tracker._steps, int(self._env.max_episode_length))
         pos, _ = tcp_pose_b(self.robot, self.body_idx)
         angle = self.robot.data.joint_pos.torch[:, self.finger_idx]
         closure = (angle / GRIPPER_CLOSED_RAD).clamp(0.0, 1.0)
@@ -113,7 +109,7 @@ class HLPoseCommandCfg(CommandTermCfg):
     env_id: str = DEFAULT_ENV_ID
     """EnvHub id. The benchmark tasks are loaded from its nepher cache."""
     task_ids: tuple[str, ...] = ()
-    """Benchmark tasks of the stage. The stage plan assigns one of them to each env per phase."""
+    """Benchmark tasks of the stage. Env ``i`` runs task ``i % T``, and every task runs equally often."""
     pose_jitter_m: float = 0.0
     """Shift [m] of each object in the table plane per episode. Zero reproduces the benchmark layout."""
     layout_seed: int = 1

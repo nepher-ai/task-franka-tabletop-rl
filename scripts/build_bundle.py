@@ -40,8 +40,15 @@ def main() -> None:
     parser.add_argument("--version", default="1.0.0", help="Manifest version.")
     parser.add_argument("--tasks", nargs="*", default=None, help="Task ids to keep, in this order. Default: all.")
     parser.add_argument("--name", default=None, help="Manifest name. Default: a name built from the id.")
+    parser.add_argument(
+        "--background",
+        default=None,
+        help="Dome for every task. Default: the source stage's background.",
+    )
     args = parser.parse_args()
-    written = build_bundle(args.source, args.out, args.id, args.version, args.tasks, args.name)
+    written = build_bundle(
+        args.source, args.out, args.id, args.version, args.tasks, args.name, args.background
+    )
     print(f"wrote {written} tasks to {args.out}")
 
 
@@ -52,12 +59,16 @@ def build_bundle(
     version: str,
     task_ids: list[str] | None,
     name: str | None = None,
+    background: str | None = None,
 ) -> int:
     """Write the RL bundle and return how many tasks it contains.
 
+    Every task uses one background. ``background`` selects it. Without it, the source stage's
+    default background is used. Another bundle can pass a different name.
+
     Raises:
         FileNotFoundError: The source has no benchmark, or a named task has no scene file.
-        ValueError: ``task_ids`` names a task the source does not have.
+        ValueError: ``task_ids`` names a task the source does not have, or the background is missing.
     """
     source = Path(source)
     out = Path(out)
@@ -80,6 +91,17 @@ def build_bundle(
         payload["task_id"] = task_id
         payloads.append(payload)
 
+    stage = json.loads((source / "assets" / "stage.json").read_text(encoding="utf-8"))
+    records = [record for record in stage.get("backgrounds") or [] if record.get("name")]
+    by_name = {str(record["name"]): record for record in records}
+    chosen_bg = background or stage.get("background")
+    if not isinstance(chosen_bg, str) or not chosen_bg:
+        raise ValueError("assets/stage.json names no background, and --background was not set")
+    if chosen_bg not in by_name:
+        raise ValueError(f"stage has no background {chosen_bg!r}")
+    for payload in payloads:
+        payload["background"] = chosen_bg
+
     if out.exists():
         for name_ in ("tasks", "scenes"):
             folder = out / name_
@@ -87,22 +109,19 @@ def build_bundle(
                 shutil.rmtree(folder)
     (out / "tasks").mkdir(parents=True, exist_ok=True)
     used_usd: set[str] = set()
-    backgrounds: set[str] = set()
     surfaces: set[str] = set()
     for payload in payloads:
         (out / "tasks" / f"{payload['task_id']}.json").write_text(
             json.dumps(payload, indent=2) + "\n", encoding="utf-8"
         )
-        backgrounds.add(str(payload["background"]))
         surfaces.add(str(payload["surface"]))
         for item in payload["placements"]:
             used_usd.add(str(item["usd"]))
-    stage = json.loads((source / "assets" / "stage.json").read_text(encoding="utf-8"))
-    stage["backgrounds"] = [record for record in stage["backgrounds"] if record["name"] in backgrounds]
-    stage["background"] = stage["backgrounds"][0]["name"]
+    stage["backgrounds"] = [by_name[chosen_bg]]
+    stage["background"] = chosen_bg
     stage["surfaces"] = [record for record in stage["surfaces"] if record["name"] in surfaces]
     stage["surface"] = stage["surfaces"][0]["name"]
-    if len(chosen) > 16 or len(backgrounds) > 1:
+    if len(chosen) > 16:
         physics = dict(stage.get("physics") or {})
         physics["gpu_max_rigid_patch_count"] = max(int(physics.get("gpu_max_rigid_patch_count", 0)), _LARGE_PATCH_COUNT)
         stage["physics"] = physics
@@ -129,7 +148,7 @@ def build_bundle(
     header = (
         f"version: {version}\n"
         "# Task index. instruction and success live only in tasks/<task_id>.json.\n"
-        "# layout is the table arrangement. background is the phase the task runs in.\n"
+        "# layout is the table arrangement. background is the benchmark dome.\n"
     )
     body = yaml.safe_dump(
         {
@@ -144,7 +163,7 @@ def build_bundle(
     manifest = {
         "id": env_id,
         "name": name or env_id,
-        "description": f"{len(payloads)} tabletop tasks in one stage, one phase per background.",
+        "description": f"{len(payloads)} tabletop tasks in one stage with one background.",
         "category": "manipulation",
         "version": version,
         "benchmark": True,

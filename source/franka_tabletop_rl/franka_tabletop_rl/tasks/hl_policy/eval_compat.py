@@ -59,7 +59,7 @@ class TabletopRLEvalEnv:
         return list(self._tracker.last_task_ids)
 
     def episode_finished(self):
-        """Envs holding for a background barrier, or ``None`` when each env resets on its own."""
+        """``None``. Each env resets on its own."""
         return self._tracker.episode_finished()
 
     def episode_steps(self):
