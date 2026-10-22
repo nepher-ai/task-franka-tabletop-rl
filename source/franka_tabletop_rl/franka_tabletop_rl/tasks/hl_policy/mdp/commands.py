@@ -56,7 +56,7 @@ class HLPoseCommand(CommandTerm):
             pose_jitter_m=cfg.pose_jitter_m,
             seed=cfg.layout_seed,
         )
-        self.planner: ClassicalTabletopPlanner = build_planner(env, self.tracker)
+        self.planner: ClassicalTabletopPlanner = build_planner(env, self.tracker, benchmark.stage)
         self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
         self.pose_command_b[:, 2] = 0.26
         self.pose_command_b[:, 3:] = grip_down_quat(torch.zeros(1, device=self.device))[0]

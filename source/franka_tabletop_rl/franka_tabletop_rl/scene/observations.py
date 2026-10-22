@@ -45,7 +45,7 @@ def gripper_pos(env) -> torch.Tensor:
     robot = env.scene["robot"]
     index = _joint_indexes(robot, ["finger_joint"])
     opening = robot.data.joint_pos[:, index]
-    return opening / GRIPPER_CLOSED_RAD
+    return (opening / GRIPPER_CLOSED_RAD).clamp(0.0, 1.0)
 
 
 def eef_pose(env) -> torch.Tensor:

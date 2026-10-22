@@ -113,7 +113,7 @@ def _clear_of(item_pos, item_half, target_pos, target_half, target_rot, table_ce
         direction = direction / norm if norm > 1e-6 else np.array([1.0, 0.0, 0.0])
     reach = float(target_half[0] + item_half[0] + 0.05)
     center = np.array(target_pos, dtype=np.float64) + direction * reach
-    center[2] = float(item_pos[2])
+    center[2] = float(table_center[2] + item_half[2])
     return _clamp_xy(center, item_half, table_center, table_half)
 
 

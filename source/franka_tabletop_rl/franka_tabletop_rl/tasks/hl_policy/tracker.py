@@ -136,7 +136,7 @@ class TaskTracker:
         return bool(self.contact[self.entity(index, slot)][index])
 
     def note_step(self, lengths) -> None:
-        """Remember each env's episode length [steps], used when an env finishes early."""
+        """Remember the command manager's episode length [steps]. Finish counts come from the env."""
         self._steps = np.asarray(lengths, dtype=int).reshape(-1)
 
     def prepare_reset(self) -> None:
@@ -152,9 +152,9 @@ class TaskTracker:
             ids = [int(i) for i in torch.as_tensor(env_ids).reshape(-1).tolist()]
         if self._active:
             for index in ids:
-                if self.finished_steps[index] < 0:
-                    self.finished_steps[index] = int(self._steps[index])
-                    self.last_task_ids[index] = self.task_id_of(index)
+                length = self.env.episode_length_buf[index]
+                self.finished_steps[index] = int(length.item() if hasattr(length, "item") else length)
+                self.last_task_ids[index] = self.task_id_of(index)
                 self.last_success[index] = self.success_now[index]
                 self.last_progress[index] = self.progress[index]
         self._active = True

@@ -24,6 +24,7 @@ import numpy as np
 
 from franka_tabletop_rl.benchmark.predicates import latch_key
 from franka_tabletop_rl.benchmark.spec import Goal
+from franka_tabletop_rl.benchmark.stage import resolve_surface
 from franka_tabletop_rl.frames import MIN_REACH_X_M, REACH_HIGH_M, REACH_LOW_M, REACH_Z_HIGH_M, REACH_Z_LOW_M
 
 from ..tracker import TaskTracker
@@ -35,7 +36,6 @@ from .targets import place_center
 STEP_M = 0.05
 STEP_YAW_RAD = 0.3
 POS_TOL_M = 0.012
-HIGH_MIN_X_M = 0.38
 Z_TOL_M = 0.008
 TRAVEL_Z_M = 0.24
 SAFE_Z_M = 0.30
@@ -46,19 +46,55 @@ LIFT_MIN_M = 0.04
 MISSED_CLOSURE = 0.92
 MAX_ATTEMPTS = 6
 TILT_RESEARCH_RAD = 0.3
-# Horizontal reach limits of the tracked workspace [m].
-_REACH_MAX_M = 0.78
+# Oak box used when a stage does not name a work surface [m].
+_OAK_CENTER = np.array([0.547, 0.0, 0.0])
+_OAK_HALF = np.array([0.35, 0.5, 0.02])
 
 
 def reach_limit(xy: np.ndarray, z: float) -> np.ndarray:
-    """Pull a horizontal tool position [m] inside the tracked reach at height `z` [m]."""
+    """Pull a horizontal tool position [m] inside the tracked reach at height `z` [m].
+
+    The radius and the minimum x match :func:`franka_tabletop_rl.frames.project_to_reach`.
+    """
     blend = float(np.clip((z - REACH_Z_LOW_M) / (REACH_Z_HIGH_M - REACH_Z_LOW_M), 0.0, 1.0))
     radius_max = REACH_LOW_M + (REACH_HIGH_M - REACH_LOW_M) * blend
     limited = np.asarray(xy, dtype=np.float64).copy()
     limited *= min(radius_max / max(float(np.hypot(*limited)), 1e-6), 1.0)
-    # Close to the base the arm cannot hold the grip-down pose high above the table.
-    limited[0] = max(limited[0], MIN_REACH_X_M if z < 0.12 else HIGH_MIN_X_M)
+    limited[0] = max(limited[0], MIN_REACH_X_M)
     return limited
+
+
+def table_box(stage: dict | None, layout) -> tuple[np.ndarray, np.ndarray]:
+    """Work-surface center [m] and half sizes [m] for one task.
+
+    A task ``surface_pose`` overrides the stage center. Without a stage, the oak box is used.
+    """
+    if not stage:
+        return _OAK_CENTER.copy(), _OAK_HALF.copy()
+    record = resolve_surface(stage, layout.surface)
+    half = np.asarray(record.get("table_m") or (0.7, 1.0, 0.04), dtype=np.float64) / 2.0
+    table_z = float(record.get("table_z_m", 0.0))
+    pose = layout.surface_pose if isinstance(getattr(layout, "surface_pose", None), dict) else None
+    if pose and pose.get("pos"):
+        pos = pose["pos"]
+        center = np.array([float(pos[0]), float(pos[1]), table_z])
+    else:
+        raw = record.get("center_xy") or tuple(record.get("pos", (0.547, 0.0)))[:2]
+        center = np.array([float(raw[0]), float(raw[1]), table_z])
+    return center, half
+
+
+def _without_redundant_resting(goals: list) -> list:
+    """Drop ``resting`` when that slot is also taken outside a container or off a support.
+
+    The one placement sets the object on the table, which is what ``resting`` scores.
+    """
+    moved = {goal.slot for goal in goals if isinstance(goal, PlaceGoal) and goal.op in ("outside", "off")}
+    return [
+        goal
+        for goal in goals
+        if not (isinstance(goal, PlaceGoal) and goal.op == "resting" and goal.slot in moved)
+    ]
 
 
 class Stage(IntEnum):
@@ -144,11 +180,17 @@ class ClassicalTabletopPlanner:
         self.contexts = [_Context() for _ in range(self.num_envs)]
         self._grasps: dict[tuple[int, str], list[Grasp]] = {}
         self._warned: set[str] = set()
+        self.tables: list[tuple[np.ndarray, np.ndarray]] | None = None
 
     # ------------------------------------------------------------------ setup
 
     def _task(self, index: int) -> int:
         return int(self.tracker.task_index[index])
+
+    def _table(self, index: int) -> tuple[np.ndarray, np.ndarray]:
+        if not self.tables:
+            return _OAK_CENTER.copy(), _OAK_HALF.copy()
+        return self.tables[self._task(index)]
 
     def _slot(self, context: _Context) -> str:
         return context.goals[context.current].slot
@@ -159,7 +201,7 @@ class ClassicalTabletopPlanner:
     def _queue(self, index: int):
         task = self._task(index)
         spec = self.tracker.specs[task]
-        layout = self.tracker.task_layouts[task]
+        layout = self.tracker.env_layouts[index]
         positions = {item.slot: item.position_m[:2] for item in layout.placements}
         check = None if spec is None else spec.check
         return compile_goals(check, positions)
@@ -188,9 +230,9 @@ class ClassicalTabletopPlanner:
             index = int(index)
             context = _Context()
             queue = self._queue(index)
-            context.goals = list(queue.goals)
+            context.goals = _without_redundant_resting(list(queue.goals))
             context.ordered = queue.ordered
-            context.supported = queue.supported and bool(queue.goals)
+            context.supported = queue.supported and bool(context.goals)
             if context.supported:
                 context.todo = list(range(len(context.goals)))
                 context.offsets = self._container_offsets(self._task(index), context.goals)
@@ -263,7 +305,8 @@ class ClassicalTabletopPlanner:
 
     @staticmethod
     def _reachable(point: np.ndarray) -> bool:
-        return bool(np.hypot(point[0], point[1]) <= _REACH_MAX_M and point[0] >= MIN_REACH_X_M)
+        limited = reach_limit(point[:2], float(point[2]))
+        return bool(np.linalg.norm(limited - np.asarray(point[:2], dtype=np.float64)) < 1e-4)
 
     def _begin_grasp(self, context: _Context, index: int) -> None:
         slot = self._slot(context)
@@ -304,8 +347,8 @@ class ClassicalTabletopPlanner:
     def _advance(self, context: _Context, index: int, tcp: np.ndarray, closure: float) -> None:
         context.age += 1
         if context.age <= 2:
-            context.pos = tcp.copy() if context.age == 2 else context.pos
-            context.target = HOME.copy()
+            context.pos = tcp.copy()
+            context.target = tcp.copy()
             return
         context.timer += 1
         handler = {
@@ -406,7 +449,7 @@ class ClassicalTabletopPlanner:
             return
         settled = abs(closure - context.previous_closure) < 0.01
         gripped = self.tracker.touching(index, slot)
-        if closure > MISSED_CLOSURE:
+        if closure > MISSED_CLOSURE and not gripped:
             self._fail(context)
         elif settled and gripped:
             self._plan_carry(context, index)
@@ -452,9 +495,7 @@ class ClassicalTabletopPlanner:
                 continue
             center = np.asarray(placement.position_m, dtype=np.float64)
             occupied.append((center, np.asarray(placement.asset.size_m) / 2))
-        # The oak and maple tops share this center and footprint.
-        table_center = np.array([0.547, 0.0, 0.0])
-        table_half = np.array([0.35, 0.5, 0.02])
+        table_center, table_half = self._table(index)
         center = place_center(
             goal, o_pos, item_half, target_pos, target_half, target_rot, occupied, table_center, table_half
         )
@@ -561,13 +602,16 @@ def _stage(env):
     return omni.usd.get_context().get_stage()
 
 
-def build_planner(env, tracker: TaskTracker, points_per_object: int = 6000) -> ClassicalTabletopPlanner:
+def build_planner(
+    env, tracker: TaskTracker, stage: dict | None = None, points_per_object: int = 6000
+) -> ClassicalTabletopPlanner:
     """Sample every task's object surfaces from the spawned prims and build the planner.
 
     Each USD variant (path and scale) is sampled once, from an env that holds it. A point's
     root-frame position is ``R^T (p - root)`` with the rotation ``R`` of that body's spawn pose.
+    ``stage`` is the benchmark stage; it supplies each task's work-surface box.
     """
-    stage = _stage(env)
+    usd = _stage(env)
     plan = tracker.plan
     points: list[dict[str, np.ndarray]] = []
     rest: list[dict[str, tuple]] = []
@@ -585,7 +629,7 @@ def build_planner(env, tracker: TaskTracker, points_per_object: int = 6000) -> C
             if variant not in sampled:
                 entity = plan.phase_slots[phase][sample][placement.slot]
                 spawn_pos, spawn_quat = plan.start_poses[plan.entities.index(entity)]
-                world = sample_prim_points(stage, f"/World/envs/env_{sample}/{entity}", points_per_object)
+                world = sample_prim_points(usd, f"/World/envs/env_{sample}/{entity}", points_per_object)
                 spawn_rot = quat_wxyz_to_matrix(np.asarray(spawn_quat, dtype=np.float64))
                 sampled[variant] = (world - (origin + np.asarray(spawn_pos, dtype=np.float64))) @ spawn_rot
             task_points[placement.slot] = sampled[variant]
@@ -595,4 +639,6 @@ def build_planner(env, tracker: TaskTracker, points_per_object: int = 6000) -> C
             )
         points.append(task_points)
         rest.append(task_rest)
-    return ClassicalTabletopPlanner(tracker, points, rest)
+    planner = ClassicalTabletopPlanner(tracker, points, rest)
+    planner.tables = [table_box(stage, layout) for layout in tracker.task_layouts]
+    return planner

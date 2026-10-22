@@ -124,8 +124,13 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
 
         The camera is not on the scene, so nothing spawns it. Its presence tells Kit to load the
         rendering app. A plain play drops the preset, so the rendering app stays off.
+
+        The base play mode caps the scene at 50 envs. This benchmark needs one env per task, so
+        that count is restored. ``--num_envs`` is applied after this method.
         """
+        task_count = len(self.task_ids)
         super().play_mode()
+        self.scene.num_envs = task_count
         if isinstance(self.highlight, HighlightCfg):
             self.rendering_camera = rendering_camera()
         else:

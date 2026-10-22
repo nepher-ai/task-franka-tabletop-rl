@@ -35,12 +35,14 @@ def test_highlight_stays_off_until_it_is_selected():
     cfg.play_mode()
     assert cfg.highlight is None
     assert not hasattr(cfg, "rendering_camera")
+    assert cfg.scene.num_envs == len(cfg.task_ids)
 
     cfg = HLEnvCfg_PLAY()
     cfg.highlight = cfg.highlight.on
     cfg.play_mode()
     assert isinstance(cfg.highlight, HighlightCfg)
     assert (cfg.rendering_camera.height, cfg.rendering_camera.width) == (CELL_HEIGHT, CELL_WIDTH)
+    assert cfg.scene.num_envs == len(cfg.task_ids)
 
 
 def test_a_large_stage_is_sampled_with_the_seed_and_shown_in_benchmark_order():
