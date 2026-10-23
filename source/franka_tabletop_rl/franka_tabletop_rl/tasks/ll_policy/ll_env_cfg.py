@@ -3,13 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Low-level tracker: move the gripper to a commanded tool pose and open or close it.
+"""Low-level tracker. The policy sees 43 values and returns a 7-D action the IK term integrates.
 
-Robot, table, physics rate and control rate are those of the tabletop benchmark. The policy sees a
-43-D observation and returns a 7-D action that the IK action term turns into absolute joint targets.
-
-Observation (43): arm joint position and velocity (7 + 7), gripper closure (1), tool pose (7),
-tool-pose error (6), pose target (7), grip target (1), last action (7).
+Observation: joint position and velocity (7 + 7), gripper (1), tool pose (7), pose error (6),
+pose target (7), grip target (1), last action (7).
 """
 
 from __future__ import annotations
@@ -44,7 +41,7 @@ _FINGER = SceneEntityCfg("robot", joint_names=["finger_joint"])
 
 @configclass
 class LLSceneCfg(TabletopSceneCfg):
-    """The tabletop scene without cameras, contact sensors or objects."""
+    """Tabletop scene without cameras, contact sensors, or objects."""
 
     cam_exterior_left = None
     cam_exterior_right = None
@@ -56,7 +53,7 @@ class LLSceneCfg(TabletopSceneCfg):
 
 @configclass
 class CommandsCfg:
-    """Tool pose target and gripper target, resampled every 2 to 4 s."""
+    """Tool pose and gripper targets, resampled every 2 to 4 s."""
 
     ee_pose = mdp.TcpPoseCommandCfg(asset_name="robot", body_name=EE_BODY, resampling_time_range=(2.0, 4.0))
     grip_cmd = mdp.GripperCommandCfg(resampling_time_range=(2.0, 4.0), close_prob=0.5)
@@ -64,7 +61,7 @@ class CommandsCfg:
 
 @configclass
 class ActionsCfg:
-    """Relative tool pose and gripper in, absolute 8-D joint targets out."""
+    """Relative tool pose and gripper in, absolute joint targets out."""
 
     arm_action = mdp.IkJointCommandActionCfg(
         asset_name="robot",
@@ -100,7 +97,7 @@ class ObservationsCfg:
 
 @configclass
 class EventCfg:
-    """Start each episode from the ready pose plus a random arm offset."""
+    """Ready pose plus a random arm offset."""
 
     reset_scene = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
     reset_arm = EventTerm(
@@ -112,7 +109,7 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Tool-pose tracking at several scales, gripper tracking, and smoothness."""
+    """Pose tracking, gripper tracking, and smoothness."""
 
     pos_coarse = RewTerm(func=mdp.position_error, weight=-2.0, params={"command_name": "ee_pose", "asset_cfg": _EE})
     pos_fine = RewTerm(
@@ -170,8 +167,6 @@ class CurriculumCfg:
 
 @configclass
 class LLEnvCfg(ManagerBasedRLEnvCfg):
-    """Training configuration of the tracker."""
-
     scene: LLSceneCfg = LLSceneCfg(num_envs=4096, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -192,7 +187,7 @@ class LLEnvCfg(ManagerBasedRLEnvCfg):
 
 @configclass
 class LLEnvCfg_PLAY(LLEnvCfg):
-    """Evaluation configuration: few envs and clean observations."""
+    """Fewer envs and no observation noise."""
 
     def __post_init__(self):
         super().__post_init__()

@@ -3,14 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Let Play treat an existing checkpoint path as a file, not a log-directory regex.
+"""Treat an existing checkpoint path as a file.
 
-``isaaclab.bat play`` resolves ``agent_cfg.load_checkpoint`` by scanning the
-experiment log directory. When that value is already a file, return it.
-
-Play imports that resolver before this package is loaded. Replacing it only on
-the defining module leaves Play holding the original function, which then
-compiles a Windows path as a regex (``bad escape \\I``) and Kit shuts down.
+Play binds the resolver before this package loads. Patching only the defining module leaves Play
+holding the original, which compiles a Windows path as a regex.
 """
 
 from __future__ import annotations
@@ -20,11 +16,7 @@ import sys
 
 
 def prefer_checkpoint_file() -> None:
-    """Install the file-path shortcut on Isaac Lab's checkpoint resolver.
-
-    Also replaces the function on every module that already imported it, which
-    is how ``play`` binds the resolver before task registration runs.
-    """
+    """Return an absolute checkpoint path as a file, including on modules that already imported it."""
     import isaaclab_tasks.utils.parse_cfg as parse_cfg
 
     current = parse_cfg.get_checkpoint_path

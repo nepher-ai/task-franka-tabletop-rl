@@ -3,14 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Hierarchical environment: classical planner plus the learned tracker.
+"""Planner plus tracker.
 
 Registered environments:
-  Nepher-FrankaTabletopRL-HL-Play-v0        every benchmark task in one stage (``task_id="all"``)
-  Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0  the eval-nav entry, ``cfg_class(env_id=..., task_id="all")``
+  Nepher-FrankaTabletopRL-HL-Play-v0        every task in one stage (``task_id="all"``)
+  Nepher-FrankaTabletopRL-HL-EnvhubPlay-v0  eval-nav entry
 
-Both load the tracker checkpoint of the low-level task as their policy, and the benchmark
-assets from the nepher cache of the cfg's ``env_id`` (``franka-tabletop-rl-v1`` by default).
+Both load the tracker checkpoint and the nepher cache of the cfg's ``env_id``.
 """
 
 import gymnasium as gym

@@ -3,12 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Hierarchical environment: a classical planner sets tool targets, the learned tracker follows them.
+"""Hierarchical env: the planner writes tracker targets, and the tracker checkpoint is the policy.
 
-The env is the benchmark tabletop (robot, physics, tasks, scoring) with the low-level tracker's
-observation and action. The planner is a command term, so the tracker checkpoint is the only policy
-that the evaluator loads. One stage holds every selected task: ``task_id`` is ``"all"`` or one task
-id, as eval-nav passes it. The stage names one background. Another benchmark can name a different one.
+``task_id`` is ``"all"`` or one task id. The stage uses the benchmark's one background.
 """
 
 from __future__ import annotations
@@ -61,21 +58,7 @@ class RewardsCfg:
 
 @configclass
 class HLEnvCfg(ManagerBasedRLEnvCfg):
-    """Tabletop benchmark tasks run by planner plus tracker, all in one stage.
-
-    Args:
-        env_id: EnvHub id. Assets are loaded from that id's nepher cache.
-        task_id: ``"all"`` for every task of the benchmark, or one task id (for example
-            ``cubes_and_blocks_in_bin``). ``scene.num_envs`` defaults to one env per selected task.
-            A larger count has to be a multiple of that number, so every task runs together.
-        pose_jitter_m: Per-episode shift [m] of each object in the table plane. Zero is the benchmark layout.
-        cameras: Observation cameras to spawn. Empty spawns none. The office dome and the table light
-            stay either way, so a Kit window shows the benchmark stage.
-        highlight: ``on`` records highlight videos of up to 16 tasks and changes nothing else. Pass it as
-            ``env.highlight=on``. ``highlight_tasks`` films those task indices in that order, for example
-            ``env.highlight_tasks=0-15`` or ``env.highlight_tasks=0,5,12``. An empty selection keeps the
-            seeded sample.
-    """
+    """Planner plus tracker on the benchmark stage. ``scene.num_envs`` must be a multiple of the task count."""
 
     scene: TabletopSceneCfg = TabletopSceneCfg(num_envs=1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
@@ -93,15 +76,11 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     layout_seed: int = 1
     highlight: HighlightPreset = HighlightPreset()
     highlight_tasks: tuple[int, ...] = ()
-    """Task indices to film when highlight is on, as indices or an inclusive range such as ``0-15``.
-
-    Empty samples up to 16 tasks with the seed.
-    """
+    """Task indices or an inclusive range such as ``0-15``. Empty samples up to 16 tasks."""
     task_ids: tuple[str, ...] = ()
     """Tasks of the stage, filled from ``task_id``."""
     stage_plan: object | None = None
-    """:class:`~franka_tabletop_rl.benchmark.stage_plan.StagePlan` for ``scene.num_envs`` envs.
-    :class:`HLTabletopEnv` fills it when the env is built, after eval-nav has set ``scene.num_envs``."""
+    """Stage plan for ``scene.num_envs``. ``HLTabletopEnv`` fills it after that count is final."""
 
     def __post_init__(self):
         apply_tabletop_physics(self)
@@ -127,13 +106,9 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command.layout_seed = self.layout_seed
 
     def play_mode(self):
-        """Play defaults, plus the rendering camera when highlight videos were selected.
+        """Play defaults. Highlight adds an unspawned camera so Kit loads its rendering app.
 
-        The camera is not on the scene, so nothing spawns it. Its presence tells Kit to load the
-        rendering app. A plain play drops the preset, so the rendering app stays off.
-
-        The base play mode caps the scene at 50 envs. This benchmark needs one env per task, so
-        that count is restored. ``--num_envs`` is applied after this method.
+        The base play mode caps the scene at 50 envs; the task count is restored before ``--num_envs``.
         """
         task_count = len(self.task_ids)
         super().play_mode()

@@ -3,11 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Scene, physics and asset wiring of the tabletop benchmark.
-
-The robot, the physics rate and the sensors match ``task-franka-tabletop``. A stage plan decides
-which mesh each env puts at each object position and which work surface it uses.
-"""
+"""Scene, physics, and asset wiring. Rates and sensors match ``task-franka-tabletop``."""
 
 from __future__ import annotations
 
@@ -97,10 +93,7 @@ class TabletopSceneCfg(InteractiveSceneCfg):
 
 
 def apply_tabletop_physics(cfg) -> None:
-    """Physics of the tabletop benchmark: 120 Hz steps, a command every 8 steps (15 Hz).
-
-    ``cfg`` is any manager-based env cfg. One control step is 1/15 s.
-    """
+    """120 Hz physics on a manager-based env cfg, so a command lands every 8 steps (15 Hz)."""
     cfg.episode_length_s = EPISODE_LENGTH_S
     set_physics_rate(cfg, 120)
     cfg.sim.physics = PhysxAutoCfg(isaacsim_physx=PhysxCfg())
@@ -127,11 +120,7 @@ def set_physics_rate(cfg, rate_hz: int) -> None:
 
 
 def apply_benchmark_physics(cfg, physics: dict) -> None:
-    """Apply the stage's optional ``physics`` block. Absent keys keep the task default.
-
-    Keys: ``rate_hz`` [Hz], ``solver_position_iterations`` for the robot,
-    ``enhanced_determinism``, and ``gpu_max_rigid_patch_count`` for stages with many envs.
-    """
+    """Apply ``rate_hz`` [Hz], solver iterations, determinism, and patch count. Absent keys stay."""
     if "gpu_max_rigid_patch_count" in physics:
         cfg.sim.physics.isaacsim_physx.gpu_max_rigid_patch_count = int(physics["gpu_max_rigid_patch_count"])
     if "rate_hz" in physics:
@@ -143,7 +132,6 @@ def apply_benchmark_physics(cfg, physics: dict) -> None:
 
 
 def bundle_file(bundle: Path, relative: str) -> str:
-    """Absolute path of one file inside a downloaded benchmark."""
     path = bundle / relative
     if not path.is_file():
         raise FileNotFoundError(f"benchmark is missing {relative} under {bundle}")
@@ -151,13 +139,9 @@ def bundle_file(bundle: Path, relative: str) -> str:
 
 
 def apply_stage_assets(cfg, bundle: Path, stage: dict | None = None, background: str | None = None) -> dict:
-    """Point the office, table, light and ground at what the stage declares.
+    """Point the dome, table, light, and ground at the stage. ``background`` overrides the dome.
 
-    ``background`` selects the dome. Without it the stage default is used. A caller that has not
-    mounted per-env surfaces yet keeps the stage's default surface mesh, which is what training uses.
-
-    Returns:
-        The stage dict.
+    A surface that is not a multi-asset spawner keeps the stage default mesh.
     """
     if stage is None:
         stage = read_stage(bundle)
@@ -193,11 +177,7 @@ def apply_stage_assets(cfg, bundle: Path, stage: dict | None = None, background:
 
 
 def mount_stage(cfg, bundle: Path, stage: dict, plan: StagePlan) -> None:
-    """Mount one body per object position and one per work surface the plan needs.
-
-    The finger filters name the positions, so every env has the same filter count. Build the env
-    inside :func:`franka_tabletop_rl.scene.clone.planned_worlds` so the cloner gets one world per env.
-    """
+    """Mount one body per object position and work surface. Build inside ``planned_worlds``."""
     for index, name in enumerate(plan.entities):
         position, quat = plan.start_poses[index]
         spawns = [_variant_spawn(bundle, variant) for variant in plan.variants[index]]
@@ -235,7 +215,6 @@ def _body(name: str, position, quat, assets: list, prim_path: str | None = None)
 
 
 def _tune_spawn(spawn: sim_utils.UsdFileCfg, scale, kinematic: bool) -> sim_utils.UsdFileCfg:
-    """Apply a placement's instance scale and kinematic flag to an object spawner."""
     if scale:
         spawn = spawn.replace(scale=tuple(float(value) for value in scale))
     if kinematic:
@@ -265,7 +244,6 @@ def _variant_spawn(bundle: Path, variant: ObjectVariant | None):
 
 
 def read_stage_file(bundle: Path) -> dict:
-    """The bundle stage. Present so callers do not import the benchmark reader twice."""
     return read_stage(bundle)
 
 

@@ -3,17 +3,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Highlight videos for play.
+"""Play highlight videos: one mp4 per camera, a 4 by 4 grid of up to 16 tasks.
 
-``env.highlight=on`` records one mp4 per observation camera. Each frame is a 4 by 4 grid of up to 16
-tasks, 1280 by 720 [pixels], lasting one episode (``episode_length_s``). The files are
-``best_policy/videos/highlight/<camera>.mp4``. Play exits once those files are written.
-``env.highlight_tasks=0-15`` films that inclusive range, and ``0,5,12`` films those indices, in the
-given order. Omit it and a stage with more than 16 tasks samples 16 of them with the seed.
-
-The play stage is unchanged. A scene camera renders every env, so this renders only the highlighted
-envs, at the 320 by 180 [pixels] cell size. ``play_mode`` puts one camera config on the cfg so Kit
-starts its rendering app, and that camera is never spawned.
+``env.highlight=on`` writes ``best_policy/videos/highlight/<camera>.mp4`` for one episode, then
+exits. ``env.highlight_tasks`` is indices or a range such as ``0-15``. Cells are 320 by 180
+[pixels]. The rendering camera is never spawned; it only makes Kit load its rendering app.
 """
 
 from __future__ import annotations
@@ -47,7 +41,7 @@ _CAMERAS = {
 
 @configclass
 class HighlightCfg:
-    """Selected by ``env.highlight=on``. The stage itself is not part of this cfg."""
+    """``env.highlight=on``. Does not change the stage."""
 
 
 @configclass
@@ -79,17 +73,13 @@ def highlight_envs(
     count: int = HIGHLIGHT_COUNT,
     tasks: Sequence[int] | int | str | None = None,
 ) -> tuple[int, ...]:
-    """Env indices to film, one per highlighted task.
+    """Env index of each highlighted task. Env ``k`` is the first env of task ``k``.
 
-    Env ``i`` runs task ``i % task_count``, so the first env of task ``k`` is env ``k``. ``tasks``
-    selects those task indices in the given order. A string may list indices and inclusive ranges,
-    as in ``"0,5,12"`` or ``"0-15"``. An empty selection leaves the default: a stage with at most
-    ``count`` tasks highlights all of them, and a larger stage highlights ``count`` tasks sampled
-    with ``seed``, then sorted back into benchmark order.
+    ``tasks`` is indices and inclusive ranges (``"0,5"``, ``"0-15"``), in that order. Empty selects
+    every task, or ``count`` tasks sampled with ``seed`` when the stage is larger.
 
     Raises:
-        ValueError: The stage has no task or fewer envs than tasks, or ``tasks`` is not a set of
-            at most 16 indices inside the stage.
+        ValueError: Fewer envs than tasks, or ``tasks`` is not at most 16 unique in-range indices.
     """
     if task_count <= 0 or num_envs < task_count:
         raise ValueError(f"highlight needs at least one env per task, got {num_envs} envs for {task_count} tasks")
@@ -109,7 +99,7 @@ def highlight_envs(
 
 
 def _selected_tasks(tasks: Sequence[int] | int | str | None) -> tuple[int, ...] | None:
-    """Task indices from the CLI, or None when the selection is empty and the sample should run."""
+    """Parsed task indices, or None when the selection is empty."""
     if tasks is None:
         return None
     if isinstance(tasks, str):
@@ -131,7 +121,6 @@ def _selected_tasks(tasks: Sequence[int] | int | str | None) -> tuple[int, ...] 
 
 
 def _parse_task_spec(spec: str) -> list[int]:
-    """Expand ``0,5,12`` and inclusive ranges such as ``0-15`` into task indices."""
     chosen = []
     for part in spec.split(","):
         token = part.strip()
@@ -151,7 +140,6 @@ def _parse_task_spec(spec: str) -> list[int]:
 
 
 def _task_index(token: str) -> int:
-    """One non-negative task index."""
     token = token.strip()
     if not token.isdigit():
         raise ValueError(f"highlight task indices must be integers or ranges like 0-15, got {token!r}")
@@ -166,11 +154,7 @@ def episode_steps(episode_length_s: float, step_dt: float) -> int:
 
 
 def tile_views(frames: np.ndarray) -> np.ndarray:
-    """Pack up to 16 cell images into one 1280 by 720 [pixels] frame. Unused cells stay black.
-
-    Raises:
-        ValueError: The batch is empty, larger than the grid, or not of the cell size.
-    """
+    """Pack up to 16 cells into one 1280 by 720 [pixels] frame. Unused cells stay black."""
     count = frames.shape[0] if frames.ndim == 4 else 0
     if frames.ndim != 4 or not 0 < count <= HIGHLIGHT_COUNT or frames.shape[1:] != (CELL_HEIGHT, CELL_WIDTH, 3):
         raise ValueError(
@@ -183,11 +167,7 @@ def tile_views(frames: np.ndarray) -> np.ndarray:
 
 
 class Highlight:
-    """Renders the four cameras in the highlighted envs and writes one mp4 per camera.
-
-    Frames go straight to the encoder. ``step`` and ``close`` are what the env calls on its video
-    recorders, so this needs no recorder cfg.
-    """
+    """Renders the highlighted envs and writes one mp4 per camera. The env calls ``step`` and ``close``."""
 
     def __init__(self, env, env_indices: Sequence[int], episode_length_s: float):
         from moviepy.video.io.ffmpeg_writer import FFMPEG_VideoWriter
@@ -238,7 +218,6 @@ class Highlight:
         print(f"[INFO] Highlight tasks: {names}")
 
     def step(self) -> None:
-        """Write one frame of every camera."""
         if self._closed or self._count >= self._steps:
             return
         self._count += 1
@@ -254,11 +233,7 @@ class Highlight:
             self.close()
 
     def close(self) -> None:
-        """Finish the clips and release the render products.
-
-        A finished episode ends the process. The play loop otherwise keeps stepping after the
-        files are written.
-        """
+        """Finish the clips. A completed episode raises ``SystemExit`` so play does not keep stepping."""
         if self._closed:
             return
         finished = self._count >= self._steps
@@ -284,13 +259,11 @@ class Highlight:
 
 
 def _cell_camera(camera: CameraCfg) -> CameraCfg:
-    """The observation camera at the highlight cell size, under its own prim name."""
     prefix, _, leaf = camera.prim_path.rpartition("/")
     return camera.replace(prim_path=f"{prefix}/{leaf}Highlight", height=CELL_HEIGHT, width=CELL_WIDTH)
 
 
 def _author(stage, camera: CameraCfg, indices: Sequence[int]) -> tuple[str, ...]:
-    """Author one camera prim under each highlighted env and return the paths."""
     import torch
 
     from isaaclab.utils.math import convert_camera_frame_orientation_convention

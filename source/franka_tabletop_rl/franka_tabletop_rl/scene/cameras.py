@@ -12,11 +12,7 @@ OBSERVATION_CAMERAS = ("cam_exterior_left", "cam_exterior_right", "cam_wrist", "
 
 
 def requested_cameras(spec: dict | None) -> tuple[str, ...]:
-    """Cameras named by ``spec``, or every observation camera when it names none.
-
-    Raises:
-        ValueError: The spec names a camera that is not an observation.
-    """
+    """Cameras named by ``spec``, or every observation camera when it names none."""
     names = (spec or {}).get("cameras")
     if not names:
         return OBSERVATION_CAMERAS
@@ -27,13 +23,7 @@ def requested_cameras(spec: dict | None) -> tuple[str, ...]:
 
 
 def selected_cameras(names: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
-    """Observation cameras to keep, in observation order.
-
-    ``None`` and an empty sequence keep none.
-
-    Raises:
-        ValueError: A name is not an observation camera.
-    """
+    """Observation cameras to keep, in observation order. Empty keeps none."""
     if not names:
         return ()
     return requested_cameras({"cameras": names})

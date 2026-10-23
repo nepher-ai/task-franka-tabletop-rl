@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Camera selection keeps observation order and rejects unknown names."""
-
 from __future__ import annotations
 
 import sys

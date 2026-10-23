@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The evaluator reads outcome flags as tensors and the task each env finished."""
-
 from __future__ import annotations
 
 import subprocess
@@ -80,11 +78,7 @@ def test_play_config_import_does_not_load_openusd():
     import pytest
 
     pytest.importorskip("isaaclab")
-    """Parsing the play config must not import OpenUSD.
-
-    ``isaaclab.bat play`` builds this config before Kit starts. Importing the Kit Python
-    OpenUSD first makes Kit's own USD extensions fail to load on Windows.
-    """
+    # Play builds this config before Kit starts. Importing OpenUSD first breaks Kit's USD extensions.
     script = (
         "import sys\n"
         "import franka_tabletop_rl.tasks.hl_policy.hl_env_cfg\n"

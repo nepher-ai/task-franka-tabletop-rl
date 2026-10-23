@@ -3,12 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Observation terms for the Franka joint-position embodiment.
+"""Joint-position observations. Images are uint8 HWC. Joints are [rad]. Gripper is 0 open, 1 closed.
 
-Images are uint8 HWC. Joints are radians. The gripper is 0 when open and 1 when
-closed at ``pi/4``. The end-effector pose is the gripper ``base_link`` in the
-robot-root frame, then rotated into the tool frame: position [m] plus a
-wxyz quaternion.
+The tool pose is ``base_link`` in the robot root, then the tool frame: position [m] and wxyz.
 """
 
 from __future__ import annotations

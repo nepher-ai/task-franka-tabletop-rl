@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Observation terms of the low-level tracker."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The play highlight grid shows up to 16 tasks of the stage in a 1280 by 720 frame."""
-
 from __future__ import annotations
 
 import sys

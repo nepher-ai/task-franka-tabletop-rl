@@ -3,10 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""A brain-format view of an RL bundle, for parity tests and replay.
+"""Brain-format view of an RL bundle for parity tests and replay.
 
-``task-franka-tabletop`` still reads ``scenes/<task_id>-<layout>.json`` and a ``scene`` key in
-``benchmark.yaml``. This writes that view without copying the asset tree.
+``task-franka-tabletop`` reads ``scenes/<task_id>-<layout>.json``. Assets are linked, not copied.
 """
 
 from __future__ import annotations
@@ -22,13 +21,9 @@ from .bundle import load_benchmark
 
 
 def legacy_bundle_view(bundle: str | Path, root: str | Path) -> Path:
-    """Write a brain-format bundle under ``root`` and return that directory.
+    """Write a brain-format bundle under ``root``. ``assets/`` links to the RL bundle.
 
-    ``assets/`` is a junction to the RL bundle. Task files are copied as scene files with the
-    ``layout`` key renamed back to ``scene_id``.
-
-    Raises:
-        OSError: The platform cannot create a directory junction or symlink.
+    Task files are copied with ``layout`` renamed to ``scene_id``.
     """
     bundle = Path(bundle)
     root = Path(root)
@@ -59,7 +54,6 @@ def legacy_bundle_view(bundle: str | Path, root: str | Path) -> Path:
 
 
 def _link_dir(source: Path, dest: Path) -> None:
-    """Point ``dest`` at ``source``. A junction is used when a symlink is not permitted."""
     try:
         os.symlink(source, dest, target_is_directory=True)
     except OSError:

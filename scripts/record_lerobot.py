@@ -3,19 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Record brain training data from the planner and tracker as a LeRobot v2.1 dataset.
+"""Record successful planner runs as a LeRobot v2.1 dataset.
 
-Every benchmark task runs in one stage, so all tasks are recorded in parallel. Each saved episode is
-one successful run of a benchmark task. A step stores the brain's own
-observation (joint position, gripper, tool pose, camera frames) and the absolute joint target that
-the tracker's IK action produced, so a brain trained on it acts in the benchmark's action space.
-
-Examples, from the Isaac Lab root:
-    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --episodes 8 --num_envs 120
-    isaaclab.bat -p source/task-franka-tabletop-rl/scripts/record_lerobot.py --cameras cam_wrist cam_front --episodes 8
+Every selected task runs in one stage. A step stores the brain observation and the absolute joint
+target the tracker applied.
 """
 
-"""Launch Isaac Sim first: modules that import ``pxr`` must load after the app starts."""
+# Launch Isaac Sim first. Modules that import pxr must load after the app starts.
 
 import argparse
 
@@ -55,7 +49,7 @@ if args_cli.cameras is not None:
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Rest everything follows."""
+# Imports that need the simulation app follow.
 
 import franka_tabletop_rl.tasks  # noqa: E402, F401
 import gymnasium as gym  # noqa: E402

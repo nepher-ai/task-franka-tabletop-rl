@@ -5,17 +5,8 @@
 
 """Build an RL EnvHub bundle from a brain tabletop bundle.
 
-The brain bundle keeps one scene file per task under ``scenes/`` and lists every task in
-``benchmark.yaml``. This writes ``tasks/<task_id>.json`` (the scene file, with ``scene_id`` renamed
-to ``layout``), an index-only ``benchmark.yaml``, and a copy of the assets those tasks use.
-``manifest.yaml`` has no ``preset_scenes``.
-
-Examples:
-    python scripts/build_bundle.py --source ..\\envhub\\environments\\franka-tabletop-v13 ^
-        --out ..\\envhub\\environments\\franka-tabletop-rl-v1 --id franka-tabletop-rl-v1 --version 1.0.0
-    python scripts/build_bundle.py --source ..\\envhub\\environments\\franka-tabletop-v13 ^
-        --out ..\\envhub\\environments\\franka-tabletop-rl-v0 --id franka-tabletop-rl-v0 ^
-        --version 0.1.0 --tasks animals_in_bin throw_away_apple
+Writes ``tasks/<task_id>.json`` (``scene_id`` renamed to ``layout``), an index-only ``benchmark.yaml``,
+and the assets those tasks use. ``manifest.yaml`` has no ``preset_scenes``.
 """
 
 from __future__ import annotations
@@ -63,12 +54,7 @@ def build_bundle(
 ) -> int:
     """Write the RL bundle and return how many tasks it contains.
 
-    Every task uses one background. ``background`` selects it. Without it, the source stage's
-    default background is used. Another bundle can pass a different name.
-
-    Raises:
-        FileNotFoundError: The source has no benchmark, or a named task has no scene file.
-        ValueError: ``task_ids`` names a task the source does not have, or the background is missing.
+    ``background`` overrides the source stage. Every task uses that one dome.
     """
     source = Path(source)
     out = Path(out)
@@ -194,11 +180,7 @@ def _write_catalog(source: Path, out: Path, used_usd: set[str]) -> None:
 
 
 def _copy_sidecar(src: Path, dest: Path) -> None:
-    """Copy textures a USD references beside itself.
-
-    Some assets keep a folder with the USD's name. Others share a ``textures`` directory in the
-    same folder as the USD. Both have to travel with the file or the mesh loads without materials.
-    """
+    """Copy a same-named folder and a sibling ``textures`` directory so the mesh keeps its materials."""
     folder = src.with_suffix("")
     if folder.is_dir():
         shutil.copytree(folder, dest.with_suffix(""), dirs_exist_ok=True)
@@ -209,7 +191,7 @@ def _copy_sidecar(src: Path, dest: Path) -> None:
 
 
 def _copy_local_layers(src: Path, dest: Path) -> None:
-    """Copy ``@./file.usd@`` layers a text USDA payloads beside itself."""
+    """Copy ``@./file.usd@`` layers referenced by a text USDA."""
     try:
         text = src.read_text(encoding="utf-8")
     except UnicodeError:

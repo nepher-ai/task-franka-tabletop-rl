@@ -3,11 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Read the scene declaration shipped inside a benchmark bundle.
-
-``assets/stage.json`` lists the backgrounds and the work surfaces, and names the
-mount under the arm. A task file picks one background and one surface.
-"""
+"""Read ``assets/stage.json``: backgrounds, work surfaces, and the mount under the arm."""
 
 from __future__ import annotations
 
@@ -16,14 +12,9 @@ from pathlib import Path
 
 
 def read_stage(bundle: str | Path) -> dict:
-    """Return the bundle's backgrounds, work surfaces, mount, light, and ground.
+    """Backgrounds, work surfaces, mount, light, and ground.
 
-    ``backgrounds`` and ``surfaces`` are lists. ``background`` and ``surface`` are the
-    default names. A single object under the singular key is accepted as a one-entry list.
-
-    Raises:
-        FileNotFoundError: The bundle has no ``assets/stage.json``.
-        ValueError: The file omits a background, a work surface, or the mount.
+    Plural keys are lists. A single object under the singular key is a one-entry list.
     """
     path = Path(bundle) / "assets" / "stage.json"
     if not path.is_file():
@@ -48,18 +39,18 @@ def read_stage(bundle: str | Path) -> dict:
 
 
 def resolve_background(stage: dict, name: str | None = None) -> dict:
-    """Return one background record. ``name`` overrides the stage default."""
+    """One background record. ``name`` overrides the stage default."""
     return _select(stage["backgrounds"], name if name is not None else stage.get("background"), "background")
 
 
 def xyzw_from_wxyz(quat: tuple[float, ...]) -> tuple[float, float, float, float]:
-    """Isaac Lab 3 rotation from a benchmark quaternion stored as ``(w, x, y, z)``."""
+    """Isaac Lab xyzw rotation from a benchmark ``(w, x, y, z)`` quaternion."""
     w, x, y, z = (float(value) for value in quat)
     return (x, y, z, w)
 
 
 def surface_pose(stage_surface: dict, scene: dict) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Table pose [m, wxyz]. A scene ``surface_pose`` overrides the stage record."""
+    """Table pose as position [m] and wxyz. A scene ``surface_pose`` overrides the stage."""
     override = scene.get("surface_pose")
     source = override if isinstance(override, dict) else stage_surface
     pos = tuple(float(value) for value in source.get("pos", stage_surface.get("pos", (0.0, 0.0, 0.0))))
@@ -68,7 +59,7 @@ def surface_pose(stage_surface: dict, scene: dict) -> tuple[tuple[float, ...], t
 
 
 def resolve_surface(stage: dict, name: str | None = None) -> dict:
-    """Return one work-surface record. ``name`` overrides the stage default."""
+    """One work-surface record. ``name`` overrides the stage default."""
     return _select(stage["surfaces"], name if name is not None else stage.get("surface"), "surface")
 
 
@@ -100,6 +91,6 @@ def _select(records: list[dict], name: str | None, kind: str) -> dict:
 
 
 def choice(payload: dict, key: str) -> str | None:
-    """String override on a task file. Absent or non-text means the stage default."""
+    """String override on a task file, or None for the stage default."""
     value = payload.get(key)
     return value if isinstance(value, str) else None

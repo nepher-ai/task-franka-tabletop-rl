@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""MDP terms of the low-level tracker: the Isaac Lab library plus the tool-frame additions."""
-
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from .commands import GripperCommand, GripperCommandCfg, TcpPoseCommand, TcpPoseCommandCfg  # noqa: F401

@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The benchmark loader and the bundle builder agree on the task index."""
-
 from __future__ import annotations
 
 import importlib.util
@@ -24,7 +22,6 @@ build_bundle = build_bundle_mod.build_bundle
 
 
 def _source(root: Path, tasks: list[tuple[str, str, str]]) -> None:
-    """A tiny brain bundle: one scene file and one asset per task."""
     (root / "scenes").mkdir(parents=True)
     (root / "assets").mkdir()
     entries = []

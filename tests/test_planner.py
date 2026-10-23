@@ -3,10 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Grasp search and the planner's stage logic, without a simulator.
-
-Run with the Isaac Lab python, for example ``isaaclab.bat -p -m pytest tests/test_planner.py``.
-"""
+"""Grasp search and planner stages, without a simulator."""
 
 from __future__ import annotations
 
@@ -135,7 +132,7 @@ def test_drop_offsets_stay_inside_the_footprint_and_do_not_repeat():
 
 
 class _Sim:
-    """Perfect tracker and gripper: the tool reaches its target, a closed gripper carries what it holds."""
+    """Tool that reaches its target. A closed gripper carries what it holds."""
 
     def __init__(self, planner, tracker, size):
         self.planner, self.tracker, self.size = planner, tracker, size

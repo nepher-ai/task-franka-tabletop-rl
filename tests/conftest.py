@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Shared path setup and skip markers for the tabletop RL tests."""
-
 from __future__ import annotations
 
 import sys

@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Give the scene cloner one world per env of a mixed stage."""
+"""Give the scene cloner one world per env."""
 
 from __future__ import annotations
 
@@ -15,11 +15,7 @@ from franka_tabletop_rl.benchmark.stage_plan import StagePlan, explicit_worlds
 
 @contextmanager
 def planned_worlds(plan: StagePlan) -> Iterator[None]:
-    """Make the scene build the worlds of ``plan`` while its envs are constructed.
-
-    The cloner would otherwise enumerate every combination of variants. This swaps in the
-    ``num_envs`` worlds the plan names, and restores the cloner afterwards.
-    """
+    """Build the ``num_envs`` worlds in ``plan`` instead of every variant combination."""
     from isaaclab import cloner
 
     original = cloner.make_valid_clone_combinations

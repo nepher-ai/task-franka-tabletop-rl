@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""RSL-RL PPO settings of the low-level tracker."""
+"""PPO settings for the low-level tracker."""
 
 from isaaclab.utils import configclass
 
@@ -14,7 +14,7 @@ from franka_tabletop_rl.paths import best_policy_path, log_dir
 
 @configclass
 class LLPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    """PPO runner. The policy is reactive, so a small MLP with a full Markov observation is enough."""
+    """PPO runner for a reactive MLP."""
 
     num_steps_per_env = 24
     max_iterations = 3000
@@ -49,6 +49,6 @@ class LLPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 @configclass
 class LLPPORunnerCfg_ENVHUB_PLAY(LLPPORunnerCfg):
-    """Benchmark play loads the published tracker, not the newest training log."""
+    """Play loads the published tracker checkpoint."""
 
     load_checkpoint = str(best_policy_path())

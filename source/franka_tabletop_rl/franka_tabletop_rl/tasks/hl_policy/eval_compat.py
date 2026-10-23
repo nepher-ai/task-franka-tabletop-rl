@@ -3,12 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Evaluation wrapper that exposes the benchmark outcome to eval-nav.
-
-eval-nav reads ``task_completed`` and ``task_failed`` as tensors, one value per env, right after
-each step. The env auto-resets a finished episode, so the flags are latched in the tracker and are
-cleared only by an explicit ``reset``.
-"""
+"""eval-nav outcome flags. They latch until an explicit ``reset``, because the env auto-resets."""
 
 from __future__ import annotations
 
@@ -19,8 +14,6 @@ import torch
 
 
 class TabletopRLEvalEnv:
-    """Pass-through wrapper with the evaluator's outcome interface."""
-
     def __init__(self, env) -> None:
         self._env = env
 
@@ -37,7 +30,7 @@ class TabletopRLEvalEnv:
 
     @property
     def task_completed(self) -> torch.Tensor:
-        """True where the task's success expression held for 0.5 s since the last reset."""
+        """True where success held for 0.5 s since the last reset."""
         return self._tracker.completed
 
     @property
@@ -46,11 +39,10 @@ class TabletopRLEvalEnv:
         return self._tracker.failed
 
     def task_progress(self) -> np.ndarray:
-        """Latched subtask progress in ``[0, 1]``, one value per env."""
+        """Latched progress in ``[0, 1]``, one value per env."""
         return np.asarray(self._tracker.progress, dtype=np.float64).copy()
 
     def instructions(self) -> list[str]:
-        """Instruction text of each env's task."""
         tracker = self._tracker
         return [tracker.instruction(index) for index in range(tracker.num_envs)]
 
@@ -63,7 +55,7 @@ class TabletopRLEvalEnv:
         return self._tracker.episode_finished()
 
     def episode_steps(self):
-        """Steps each env had run when it finished. ``-1`` means it has not finished."""
+        """Steps at finish. ``-1`` means the env has not finished."""
         return self._tracker.episode_steps()
 
     def reset(self, *args, **kwargs):
@@ -83,5 +75,4 @@ class TabletopRLEvalEnv:
 
 
 def wrap_for_eval(env) -> TabletopRLEvalEnv:
-    """Wrap a hierarchical tabletop env for eval-nav."""
     return TabletopRLEvalEnv(env)

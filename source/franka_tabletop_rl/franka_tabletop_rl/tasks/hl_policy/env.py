@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Hierarchical environment whose one stage holds every selected task."""
+"""Hierarchical environment: one stage holds every selected task."""
 
 from __future__ import annotations
 
@@ -16,12 +16,9 @@ from franka_tabletop_rl.scene.scene_cfg import mount_stage
 
 
 class HLTabletopEnv(ManagerBasedRLEnv):
-    """Manager environment with every selected task in one stage.
+    """Builds the stage plan once ``scene.num_envs`` is final.
 
-    ``scene.num_envs`` is only final when the env is built, because eval-nav sets it after it
-    creates the cfg. The stage plan and the bodies are built here, before the scene is cloned.
-
-    ``env.highlight=on`` records up to 16 tasks for one episode.
+    eval-nav sets that count after it creates the cfg. ``env.highlight=on`` records up to 16 tasks.
     """
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):

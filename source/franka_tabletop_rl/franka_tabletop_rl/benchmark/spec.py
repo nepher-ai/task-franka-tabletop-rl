@@ -84,13 +84,10 @@ def spec_from_success(
     time_limit_s: float,
     name_to_slot: dict[str, str],
 ) -> TabletopTaskSpec:
-    """Build a spec from a task success block.
-
-    The block is an ``op`` with an object name or a list of names. ``require_grasp`` overrides the
-    objects that must be grasped and released.
+    """Build a spec from an ``op`` block. ``require_grasp`` overrides who must be grasped and released.
 
     Raises:
-        ValueError: The block is the old short ``kind`` form, which this project does not load.
+        ValueError: The block is the old short ``kind`` form.
     """
     if "kind" in success and "op" not in success and "checks" not in success:
         raise ValueError(f"task {task_id} uses a short-form success kind; write it as an op")
@@ -144,7 +141,7 @@ def _goal(slot: str, op: str, target: str, side: str, block: dict) -> Goal:
 
 
 def _named(value, name_to_slot: dict[str, str]) -> tuple[str, ...]:
-    """Map object names to slots. An empty list means no slots."""
+    """Map object names to slots. An empty list is no slots."""
     if value is None or value == []:
         return ()
     return _slots(value, name_to_slot)

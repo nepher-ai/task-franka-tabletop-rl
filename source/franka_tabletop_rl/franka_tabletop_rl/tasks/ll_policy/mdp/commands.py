@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Command terms of the low-level tracker: a tool pose target and a gripper target."""
+"""Tool-pose and gripper command terms for the low-level tracker."""
 
 from __future__ import annotations
 
@@ -25,12 +25,7 @@ if TYPE_CHECKING:
 
 
 class TcpPoseCommand(CommandTerm):
-    """Target tool pose in the robot root frame, ``[N, 7]`` as position [m] and xyzw quaternion.
-
-    Targets point the gripper down with a yaw and a small tilt. A share of the resamples steps
-    away from the previous target instead of jumping across the workspace, which trains the short
-    precise moves the planner issues.
-    """
+    """Tool pose ``[N, 7]`` (position [m], xyzw), gripper down. Some resamples are short steps."""
 
     cfg: TcpPoseCommandCfg
 
@@ -74,18 +69,16 @@ class TcpPoseCommand(CommandTerm):
 
 @configclass
 class TcpPoseCommandCfg(CommandTermCfg):
-    """Configuration of :class:`TcpPoseCommand`."""
-
     @configclass
     class Ranges:
-        """Sampling box of the target, expressed in the robot root frame."""
+        """Sampling box in the robot root frame."""
 
         low: tuple[float, float, float] = (0.30, -0.45, 0.03)
         """Lower corner [m]."""
         high: tuple[float, float, float] = (0.80, 0.45, 0.45)
-        """Upper corner [m]. Targets are then pulled inside the tracked reach."""
+        """Upper corner [m], then pulled inside the tracked reach."""
         yaw: float = math.pi / 2
-        """Largest yaw [rad] of the gripper about world Z. The gripper is symmetric under a half turn."""
+        """Largest yaw [rad] about world Z."""
         tilt: float = 0.15
         """Largest lean [rad] of the approach axis about world X and Y."""
 
@@ -96,11 +89,11 @@ class TcpPoseCommandCfg(CommandTermCfg):
     local_prob: float = 0.5
     """Share of resamples that stay within ``local_step_m`` of the previous target."""
     local_step_m: float = 0.12
-    """Largest step [m] per axis of a local resample."""
+    """Largest local step [m] per axis."""
 
 
 class GripperCommand(CommandTerm):
-    """Target gripper state per env: 0 open, 1 closed, shape ``[N, 1]``."""
+    """Gripper target ``[N, 1]``: 0 open, 1 closed."""
 
     cfg: GripperCommandCfg
 
@@ -125,8 +118,6 @@ class GripperCommand(CommandTerm):
 
 @configclass
 class GripperCommandCfg(CommandTermCfg):
-    """Configuration of :class:`GripperCommand`."""
-
     class_type: type = GripperCommand
     close_prob: float = 0.5
-    """Probability that a resample asks for a closed gripper."""
+    """Probability a resample asks for a closed gripper."""

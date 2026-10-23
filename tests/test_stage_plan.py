@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Stage plans: one background, env i runs task i % T."""
-
 from __future__ import annotations
 
 import pytest

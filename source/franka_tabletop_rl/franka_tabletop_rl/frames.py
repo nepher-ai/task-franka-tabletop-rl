@@ -3,12 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Tool frame of the 2F-85 gripper, shared by the low-level policy and the planner.
+"""Tool frame on the gripper ``base_link``. +X approaches, and the fingers close along Y.
 
-The tracked frame is rigidly attached to ``base_link`` of the gripper. Its origin sits between the
-finger pads and its axes are those of ``base_link``: +X is the approach direction, and the fingers
-close along Y. With the gripper pointing down, +X is world -Z and the fingers close along world Y.
-The robot root has no rotation, so root-frame poses and env-frame poses coincide up to the origin.
+With the gripper down, +X is world -Z. The robot root is unrotated, so root and env frames match
+up to the origin.
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ MIN_REACH_X_M = 0.30
 
 
 def project_to_reach(pos: torch.Tensor) -> torch.Tensor:
-    """Pull tool targets ``[N, 3]`` [m] into the region the gripper-down arm can track."""
+    """Pull tool targets ``[N, 3]`` [m] into the region a gripper-down arm can track."""
     blend = ((pos[:, 2] - REACH_Z_LOW_M) / (REACH_Z_HIGH_M - REACH_Z_LOW_M)).clamp(0.0, 1.0)
     radius_max = REACH_LOW_M + (REACH_HIGH_M - REACH_LOW_M) * blend
     radius = torch.linalg.norm(pos[:, :2], dim=-1).clamp(min=1e-6)
@@ -49,10 +47,9 @@ def project_to_reach(pos: torch.Tensor) -> torch.Tensor:
 
 
 def grip_down_quat(yaw: torch.Tensor, tilt_x: torch.Tensor | None = None, tilt_y: torch.Tensor | None = None):
-    """Orientation (xyzw) of a downward gripper turned by ``yaw`` [rad] about world Z.
+    """Downward gripper orientation (xyzw), ``[N, 4]``. ``yaw`` [rad] is about world Z.
 
-    ``tilt_x`` and ``tilt_y`` [rad] optionally lean the approach axis about world X and Y.
-    Shape is ``[N, 4]``.
+    ``tilt_x`` and ``tilt_y`` [rad] lean the approach axis about world X and Y.
     """
     base = torch.tensor(GRIP_DOWN_XYZW, device=yaw.device, dtype=yaw.dtype).expand(yaw.shape[0], 4)
     zeros = torch.zeros_like(yaw)
@@ -66,7 +63,7 @@ def grip_down_quat(yaw: torch.Tensor, tilt_x: torch.Tensor | None = None, tilt_y
 
 
 def tcp_pose_b(robot, body_index: int) -> tuple[torch.Tensor, torch.Tensor]:
-    """Tool pose in the robot root frame: position [m] ``[N, 3]`` and xyzw quaternion ``[N, 4]``."""
+    """Tool pose in the robot root frame: position [m] ``[N, 3]`` and xyzw ``[N, 4]``."""
     body_pos_w = robot.data.body_pos_w.torch[:, body_index]
     body_quat_w = robot.data.body_quat_w.torch[:, body_index]
     offset = torch.tensor(TCP_OFFSET_B, device=body_pos_w.device, dtype=body_pos_w.dtype)

@@ -3,11 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Planner command terms: the tool pose and grip targets are written by the classical planner.
-
-They keep the names and shapes of the low-level tracker's command terms, so a tracker checkpoint
-trained on random targets drives this environment without change.
-"""
+"""Planner command terms with the tracker's command names and shapes."""
 
 from __future__ import annotations
 
@@ -33,11 +29,7 @@ if TYPE_CHECKING:
 
 
 class HLPoseCommand(CommandTerm):
-    """Tool pose target ``[N, 7]`` (position [m], xyzw quaternion) chosen by the planner each control step.
-
-    The term also owns the task tracker and the planner, which the reset event and the termination
-    terms reach through ``env.command_manager.get_term("ee_pose")``.
-    """
+    """Tool pose ``[N, 7]`` (position [m], xyzw). Also owns the tracker and planner."""
 
     cfg: HLPoseCommandCfg
 
@@ -101,23 +93,20 @@ class HLPoseCommand(CommandTerm):
 
 @configclass
 class HLPoseCommandCfg(CommandTermCfg):
-    """Configuration of :class:`HLPoseCommand`."""
-
     class_type: type = HLPoseCommand
     asset_name: str = "robot"
     body_name: str = EE_BODY
     env_id: str = DEFAULT_ENV_ID
-    """EnvHub id. The benchmark tasks are loaded from its nepher cache."""
+    """EnvHub id whose nepher cache holds the tasks."""
     task_ids: tuple[str, ...] = ()
-    """Benchmark tasks of the stage. Env ``i`` runs task ``i % T``, and every task runs equally often."""
+    """Tasks of the stage. Env ``i`` runs task ``i % T``."""
     pose_jitter_m: float = 0.0
-    """Shift [m] of each object in the table plane per episode. Zero reproduces the benchmark layout."""
+    """Per-episode shift [m] of each object in the table plane. Zero keeps the benchmark layout."""
     layout_seed: int = 1
-    """Seed of the first jitter draw."""
 
 
 class HLGripCommand(CommandTerm):
-    """Gripper target ``[N, 1]`` (0 open, 1 closed) written by the planner through the pose term."""
+    """Gripper target ``[N, 1]`` (0 open, 1 closed), copied from the pose term."""
 
     cfg: HLGripCommandCfg
 
@@ -141,7 +130,5 @@ class HLGripCommand(CommandTerm):
 
 @configclass
 class HLGripCommandCfg(CommandTermCfg):
-    """Configuration of :class:`HLGripCommand`."""
-
     class_type: type = HLGripCommand
     pose_command_name: str = "ee_pose"

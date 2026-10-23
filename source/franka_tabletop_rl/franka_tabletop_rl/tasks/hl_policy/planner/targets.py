@@ -3,11 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Where to put an object so the benchmark predicate that scores it becomes true.
+"""Object-center positions [m] that make a benchmark predicate true.
 
-``in_container`` stays in the planner: it drops on the container's internal grid, which is the
-behavior the single-background benchmark was tuned on. Every other placement is a position for
-the object's center [m].
+``in_container`` is placed on the container grid in the planner. Every other op is handled here.
 """
 
 from __future__ import annotations
@@ -33,21 +31,7 @@ def place_center(
     table_center: np.ndarray,
     table_half: np.ndarray,
 ) -> np.ndarray:
-    """Object-center position [m] that satisfies ``goal``.
-
-    Args:
-        item_pos: Current object center [m].
-        item_half: Object half sizes [m].
-        target_pos: Reference, support, or container center [m]. ``None`` when the goal has none.
-        target_half: That body's half sizes [m].
-        target_rot: Body-to-world rotation of the target, shape [3, 3].
-        occupied: Other objects as ``(center, half)`` the free-spot search should avoid.
-        table_center: Table center [m].
-        table_half: Table half sizes [m], xy used, z ignored.
-
-    Returns:
-        The desired object center [m].
-    """
+    """Object-center position [m] that satisfies ``goal``. ``occupied`` is ``(center, half)`` to avoid."""
     item_pos = np.asarray(item_pos, dtype=np.float64)
     item_half = np.asarray(item_half, dtype=np.float64)
     if goal.op in ("on_top", "stacked") and target_pos is not None and target_half is not None:
@@ -72,7 +56,7 @@ def place_center(
 def placement_satisfies(
     goal: PlaceGoal, center: np.ndarray, item_half: np.ndarray, target_pos, target_half, target_quat
 ) -> bool:
-    """True when an object centered at ``center`` meets the geometric predicate of ``goal``."""
+    """Whether an object centered at ``center`` [m] meets ``goal``."""
     item = {
         "pos": np.asarray(center, dtype=np.float64).reshape(1, 3),
         "quat": np.array([[1.0, 0.0, 0.0, 0.0]]),

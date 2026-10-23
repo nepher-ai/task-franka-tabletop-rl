@@ -3,14 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Classical pick-and-place planner: the high level of the hierarchical policy.
+"""Classical pick-and-place planner. Each step is a tool position, yaw, and gripper target.
 
-Per env it picks each object a task asks to move, carries it to the pose that satisfies that
-goal, lets go, and retreats, then moves to the next object. A task that must be left upright is
-left alone. It emits a tool position, a tool yaw and a gripper state at the control rate.
-
-The planner reads object and tool poses from the env and uses no privileged action: every output
-is a target that the tracker has to reach on its own.
+A task that must be left upright is left alone. Outputs are targets the tracker has to reach.
 """
 
 from __future__ import annotations
@@ -52,10 +47,7 @@ _OAK_HALF = np.array([0.35, 0.5, 0.02])
 
 
 def reach_limit(xy: np.ndarray, z: float) -> np.ndarray:
-    """Pull a horizontal tool position [m] inside the tracked reach at height `z` [m].
-
-    The radius and the minimum x match :func:`franka_tabletop_rl.frames.project_to_reach`.
-    """
+    """Pull a horizontal tool position [m] inside the tracked reach at height ``z`` [m]."""
     blend = float(np.clip((z - REACH_Z_LOW_M) / (REACH_Z_HIGH_M - REACH_Z_LOW_M), 0.0, 1.0))
     radius_max = REACH_LOW_M + (REACH_HIGH_M - REACH_LOW_M) * blend
     limited = np.asarray(xy, dtype=np.float64).copy()
@@ -65,10 +57,7 @@ def reach_limit(xy: np.ndarray, z: float) -> np.ndarray:
 
 
 def table_box(stage: dict | None, layout) -> tuple[np.ndarray, np.ndarray]:
-    """Work-surface center [m] and half sizes [m] for one task.
-
-    A task ``surface_pose`` overrides the stage center. Without a stage, the oak box is used.
-    """
+    """Work-surface center [m] and half sizes [m]. A task ``surface_pose`` overrides the stage."""
     if not stage:
         return _OAK_CENTER.copy(), _OAK_HALF.copy()
     record = resolve_surface(stage, layout.surface)
@@ -85,10 +74,7 @@ def table_box(stage: dict | None, layout) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _without_redundant_resting(goals: list) -> list:
-    """Drop ``resting`` when that slot is also taken outside a container or off a support.
-
-    The one placement sets the object on the table, which is what ``resting`` scores.
-    """
+    """Drop ``resting`` when that slot is also placed outside a container or off a support."""
     moved = {goal.slot for goal in goals if isinstance(goal, PlaceGoal) and goal.op in ("outside", "off")}
     return [
         goal
@@ -141,7 +127,7 @@ class _Context:
 
 
 def drop_offsets(count: int, half_x: float, half_y: float, margin: float = 0.05) -> list[tuple[float, float]]:
-    """Cell centers [m] of a grid inside a container's footprint, in the container frame."""
+    """Cell centers [m] inside a container footprint, in the container frame."""
     inner_x, inner_y = max(half_x - margin, 0.0), max(half_y - margin, 0.0)
     if count <= 1:
         return [(0.0, 0.0)]
@@ -157,13 +143,9 @@ def drop_offsets(count: int, half_x: float, half_y: float, margin: float = 0.05)
 
 
 class ClassicalTabletopPlanner:
-    """Vectorized over envs by a per-env state machine.
+    """Per-env state machine. ``points`` are surface points [m] in each slot's root frame.
 
-    Args:
-        tracker: Scene layout and scoring of the envs. Env ``i`` plans ``tracker.task_index[i]``.
-        points: Per task, the surface points [m] of each slot in its root frame, ``[{slot: [M, 3]}]``.
-        rest: Per task, the root pose of each slot at the published layout,
-            ``[{slot: (position, wxyz quaternion)}]``.
+    ``rest`` is ``{slot: (position [m], wxyz)}`` at the published layout, one dict per task.
     """
 
     def __init__(
@@ -207,7 +189,7 @@ class ClassicalTabletopPlanner:
         return compile_goals(check, positions)
 
     def _container_offsets(self, task: int, goals: list) -> dict[int, tuple[float, float]]:
-        """Drop offset [m] of every ``in_container`` goal, in its container frame."""
+        """Drop offset [m] of each ``in_container`` goal, in its container frame."""
         by_container: dict[str, list[int]] = {}
         for index, goal in enumerate(goals):
             if isinstance(goal, PlaceGoal) and goal.op == "in_container":
@@ -244,7 +226,7 @@ class ClassicalTabletopPlanner:
     # ------------------------------------------------------------------ geometry
 
     def _anchor(self, slot: str, index: int):
-        """A task anchor is a published pose, not a spawned body."""
+        """Published pose of an anchor slot, or None when the slot is a spawned body."""
         placement = self.tracker.env_layouts[index].by_slot().get(slot)
         if placement is None or placement.asset.kind != "anchor":
             return None
@@ -286,7 +268,6 @@ class ClassicalTabletopPlanner:
         return self._grasps[(task, slot)]
 
     def _candidates(self, slot: str, index: int) -> list[Grasp]:
-        """Grasps in the object frame for the object's current pose."""
         task = self._task(index)
         points = self.points[task][slot]
         pos, rot = self._pose(slot, index)
@@ -333,7 +314,7 @@ class ClassicalTabletopPlanner:
     # ------------------------------------------------------------------ state machine
 
     def step(self, tcp: np.ndarray, closure: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Targets for every env: position [m] ``[N, 3]``, yaw [rad] ``[N]``, grip ``[N]`` (0 open, 1 close)."""
+        """Position [m] ``[N, 3]``, yaw [rad] ``[N]``, and grip ``[N]`` (0 open, 1 close)."""
         positions = np.zeros((self.num_envs, 3))
         yaws = np.zeros(self.num_envs)
         grips = np.zeros(self.num_envs)
@@ -591,7 +572,7 @@ class ClassicalTabletopPlanner:
             context.target = np.array([HOME[0], HOME[1], SAFE_Z_M])
 
     def _fail(self, context: _Context) -> None:
-        """Let go, back off upward, and try the next grasp of the same object."""
+        """Open the gripper and recover so the next grasp can be tried."""
         context.grip = 0.0
         self._switch(context, Stage.RECOVER)
 
@@ -605,11 +586,9 @@ def _stage(env):
 def build_planner(
     env, tracker: TaskTracker, stage: dict | None = None, points_per_object: int = 6000
 ) -> ClassicalTabletopPlanner:
-    """Sample every task's object surfaces from the spawned prims and build the planner.
+    """Sample each USD variant once and build the planner. ``stage`` supplies the work-surface boxes.
 
-    Each USD variant (path and scale) is sampled once, from an env that holds it. A point's
-    root-frame position is ``R^T (p - root)`` with the rotation ``R`` of that body's spawn pose.
-    ``stage`` is the benchmark stage; it supplies each task's work-surface box.
+    A point's root-frame position is ``R^T (p - root)`` at that body's spawn pose.
     """
     usd = _stage(env)
     plan = tracker.plan

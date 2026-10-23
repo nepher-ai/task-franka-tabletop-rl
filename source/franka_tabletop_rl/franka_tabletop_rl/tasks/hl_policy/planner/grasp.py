@@ -3,15 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Top-down grasp search on object surface points.
+"""Top-down grasp search on surface points. The gripper points down and closes on one horizontal axis.
 
-The gripper points down and closes along one horizontal axis. A grasp is a tool position and a
-yaw. It is feasible when the two pads close on a single connected part of the object that fits
-the opening, the open fingers can descend beside it, and nothing taller reaches the palm.
-
-Points are an object's surface sampled once from the spawned prim. The search is geometric and
-independent of the object name, so a bowl rim, a hammer handle, and a cube all come out of the
-same code.
+A grasp fits the opening, leaves a descent path for the open fingers, and clears the palm.
 """
 
 from __future__ import annotations
@@ -39,11 +33,8 @@ _YAWS = np.deg2rad(np.arange(-90.0, 90.0, 15.0))
 class Grasp:
     """One feasible grasp in the object root frame.
 
-    Attributes:
-        center_local: Tool position [m] in the object root frame.
-        axis_local: Horizontal closing axis (unit) in the object root frame at the pose it was found.
-        width_m: Object thickness [m] between the pads.
-        score: Larger is better.
+    ``center_local`` is the tool position [m], ``axis_local`` the horizontal closing axis,
+    ``width_m`` the thickness [m] between the pads, and ``score`` is larger when better.
     """
 
     center_local: np.ndarray
@@ -53,7 +44,7 @@ class Grasp:
 
 
 def quat_wxyz_to_matrix(quat: np.ndarray) -> np.ndarray:
-    """Rotation matrix of a scalar-first quaternion."""
+    """Rotation matrix of a wxyz quaternion."""
     w, x, y, z = np.asarray(quat, dtype=np.float64).reshape(4)
     norm = math.sqrt(w * w + x * x + y * y + z * z) or 1.0
     w, x, y, z = w / norm, x / norm, y / norm, z / norm
@@ -67,10 +58,7 @@ def quat_wxyz_to_matrix(quat: np.ndarray) -> np.ndarray:
 
 
 def sample_prim_points(stage, prim_path: str, count: int = 6000, seed: int = 0) -> np.ndarray:
-    """Surface points [m] of every mesh under ``prim_path``, in the world frame, shape ``[count, 3]``.
-
-    Points are drawn in proportion to triangle area.
-    """
+    """Surface points [m] under ``prim_path``, world frame, shape ``[count, 3]``, sampled by triangle area."""
     from pxr import Usd, UsdGeom
 
     root = stage.GetPrimAtPath(prim_path)
@@ -118,12 +106,10 @@ def sample_prim_points(stage, prim_path: str, count: int = 6000, seed: int = 0) 
 
 
 def find_grasps(points: np.ndarray, root_z: float, limit: int = 12) -> list[Grasp]:
-    """Feasible top-down grasps of a point cloud, best first.
+    """Feasible top-down grasps, best first.
 
-    Args:
-        points: Surface points [m] relative to the object root, in axes parallel to the world, ``[M, 3]``.
-        root_z: Height [m] of the object root above the table.
-        limit: Largest number of grasps returned.
+    ``points`` are surface points [m] in the object root frame with world-aligned axes, ``[M, 3]``.
+    ``root_z`` is the root height [m] above the table.
     """
     pts = np.asarray(points, dtype=np.float64)
     z_world = pts[:, 2] + root_z
@@ -181,14 +167,12 @@ def find_grasps(points: np.ndarray, root_z: float, limit: int = 12) -> list[Gras
 
 
 def _window(sorted_u: np.ndarray, center: float) -> tuple[int, int] | None:
-    """Index range of the sorted pad points that lie between the open fingers around ``center``."""
     first = int(np.searchsorted(sorted_u, center - OPEN_HALF_M, side="left"))
     last = int(np.searchsorted(sorted_u, center + OPEN_HALF_M, side="right"))
     return (first, last) if last - first >= 4 else None
 
 
 def _feasible(wide_u, wide_v, wide_z, cu: float, cv: float, gz: float) -> bool:
-    """True when the open fingers descend beside the object and the palm clears it."""
     offset = np.abs(wide_u - cu)
     in_path = (
         (np.abs(wide_v - cv) < PAD_HALF_WIDTH_M + 0.006)
@@ -202,7 +186,7 @@ def _feasible(wide_u, wide_v, wide_z, cu: float, cv: float, gz: float) -> bool:
 
 
 def _distinct(grasps: list[Grasp], limit: int) -> list[Grasp]:
-    """Drop grasps that repeat a better one within 2 cm, 0.02 m of height, and 20 degrees."""
+    """Drop a grasp within 2 cm and 20 degrees of a better one."""
     kept: list[Grasp] = []
     for grasp in grasps:
         if all(
@@ -217,7 +201,7 @@ def _distinct(grasps: list[Grasp], limit: int) -> list[Grasp]:
 
 
 def fallback_grasp(points: np.ndarray, root_z: float) -> Grasp:
-    """Pinch the middle of the narrower horizontal side when the search finds nothing."""
+    """Pinch the middle of the narrower horizontal side."""
     pts = np.asarray(points, dtype=np.float64)
     low, high = pts.min(axis=0), pts.max(axis=0)
     center = 0.5 * (low + high)
@@ -232,10 +216,7 @@ def fallback_grasp(points: np.ndarray, root_z: float) -> Grasp:
 
 
 def tool_yaw(axis_world: np.ndarray) -> float:
-    """Yaw [rad] about +Z of a downward gripper whose fingers close along ``axis_world``.
-
-    The gripper is symmetric under a half turn, so the result lies in ``(-pi/2, pi/2]``.
-    """
+    """Yaw [rad] about +Z for fingers closing along ``axis_world``, in ``(-pi/2, pi/2]``."""
     yaw = math.atan2(-float(axis_world[0]), float(axis_world[1]))
     if yaw > math.pi / 2 + 1e-9:
         yaw -= math.pi

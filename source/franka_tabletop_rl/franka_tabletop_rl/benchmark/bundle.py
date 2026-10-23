@@ -23,11 +23,7 @@ ALL_TASKS = "all"
 
 
 def resolve_bundle(env_id: str | None = None) -> Path:
-    """Directory of the EnvHub bundle ``env_id`` in the nepher cache.
-
-    Raises:
-        FileNotFoundError: ``nepher`` is not installed, or the bundle is not cached.
-    """
+    """Directory of EnvHub bundle ``env_id`` in the nepher cache."""
     env_id = env_id or DEFAULT_ENV_ID
     try:
         from nepher.storage.cache import get_cache_manager
@@ -56,11 +52,7 @@ class Benchmark:
     stage: dict
 
     def select(self, task_id: str) -> tuple[str, ...]:
-        """Every task id for ``"all"``, otherwise that one task.
-
-        Raises:
-            FileNotFoundError: ``task_id`` is not a task of this benchmark.
-        """
+        """Every task id for ``"all"``, otherwise that one task."""
         if task_id == ALL_TASKS:
             return self.task_ids
         if task_id not in self.task_ids:
@@ -68,25 +60,19 @@ class Benchmark:
         return (task_id,)
 
     def task(self, task_id: str) -> TaskLayout:
-        """Layout of one task.
-
-        Raises:
-            FileNotFoundError: ``task_id`` is not a task of this benchmark.
-        """
+        """Layout of one task."""
         try:
             return self.layouts[self.task_ids.index(task_id)]
         except ValueError as exc:
             raise FileNotFoundError(f"benchmark {self.root.name} has no task {task_id}") from exc
 
     def record(self, task_id: str) -> dict:
-        """Raw task file of one task."""
         try:
             return self.records[self.task_ids.index(task_id)]
         except ValueError as exc:
             raise FileNotFoundError(f"benchmark {self.root.name} has no task {task_id}") from exc
 
     def file(self, relative: str) -> Path:
-        """One file inside the bundle. Raises ``FileNotFoundError`` when it is missing."""
         path = self.root / relative
         if not path.is_file():
             raise FileNotFoundError(f"benchmark is missing {relative} under {self.root}")
@@ -96,25 +82,13 @@ class Benchmark:
 def load_benchmark(bundle: str | Path) -> Benchmark:
     """Parse ``benchmark.yaml``, every task file, and ``assets/stage.json``. Cached per directory.
 
-    The index and ``tasks/<task_id>.json`` must name the same tasks. Each file's ``layout`` and
-    ``background`` must match its index entry.
-
-    Raises:
-        FileNotFoundError: The bundle has no index or a task file.
-        ValueError: The index and the task files disagree.
+    The index and the task files must name the same tasks, with matching ``layout`` and ``background``.
     """
     return _load_cached(str(Path(bundle).resolve()))
 
 
 def task_ids_of(env_id: str, task_id: str) -> list[str] | None:
-    """Task ids that ``task_id`` runs, in env order.
-
-    eval-nav asks the task module this instead of matching ``task_id`` against a scene list.
-    ``None`` means ``task_id`` is not one of this benchmark's selectors.
-
-    Raises:
-        FileNotFoundError: The bundle ``env_id`` is not in the nepher cache.
-    """
+    """Task ids ``task_id`` runs, in env order. ``None`` when it is not a selector of this benchmark."""
     bundle = resolve_bundle(env_id)
     try:
         return list(load_benchmark(bundle).select(str(task_id)))

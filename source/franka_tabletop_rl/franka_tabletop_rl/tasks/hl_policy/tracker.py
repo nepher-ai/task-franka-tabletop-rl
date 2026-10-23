@@ -3,11 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Per-env task state of the hierarchical environment.
+"""Per-env task state. Env ``i`` runs task ``i % T`` and resets on its own.
 
-One stage holds every selected task. Env ``i`` runs task ``i % T`` and resets on its own. The dome
-is the benchmark's one background. Scoring uses the benchmark predicates, so a task counts as
-solved here exactly when the brain benchmark counts it.
+Scoring uses the benchmark predicates, so a task counts as solved when the brain benchmark does.
 """
 
 from __future__ import annotations
@@ -39,13 +37,10 @@ def _commit_hold(
     hold_s: float,
     dt: float,
 ) -> tuple[dict[str, bool], list[str], float, bool]:
-    """Store a finished pose only after it has held for :data:`SUCCESS_HOLD_S`.
+    """Commit a finished pose only after :data:`SUCCESS_HOLD_S`.
 
-    While the score stays at 1 the stored latch is left unchanged, so the next step scores the
-    pose again. A lower score stores partial progress and clears the hold.
-
-    Returns:
-        The latch, the entry order, the hold time [s], and whether the episode succeeded.
+    A score of 1 leaves the stored latch unchanged and keeps counting. A lower score stores partial
+    progress and clears the hold. Returns the latch, entry order, hold time [s], and success.
     """
     if score >= 1.0 - 1e-9:
         hold_s += dt
@@ -61,15 +56,7 @@ def _host(values) -> np.ndarray:
 
 
 class TaskTracker:
-    """Scene layout, benchmark scoring, and latched outcome flags.
-
-    Args:
-        env: The environment. Its scene holds the object bodies of ``plan``.
-        layouts: One layout per selected task, in ``plan.task_ids`` order.
-        plan: Stage plan already sized to ``env.num_envs``.
-        pose_jitter_m: Per-episode shift [m] of each object in the table plane.
-        seed: Seed of the first jitter draw.
-    """
+    """Scene layout, benchmark scoring, and latched outcomes. ``pose_jitter_m`` is a table-plane shift [m]."""
 
     def __init__(self, env, layouts: Sequence[TaskLayout], plan: StagePlan, pose_jitter_m: float = 0.0, seed: int = 1):
         self.env = env
@@ -117,7 +104,6 @@ class TaskTracker:
         self._finger = int(env.scene["robot"].find_joints("finger_joint")[0][0])
 
     def _required_slots(self, task: int) -> tuple[str, ...]:
-        """Slots whose stage the success expression of task ``task`` scores."""
         names: list[str] = []
 
         def walk(check) -> None:
@@ -134,18 +120,16 @@ class TaskTracker:
         return tuple(slot for slot in names if slot in placed)
 
     def task_id_of(self, index: int) -> str:
-        """Benchmark task id that env ``index`` is running."""
         return self.task_ids[int(self.task_index[index])]
 
     def instruction(self, index: int) -> str:
         return self.env_layouts[index].instruction
 
     def entity(self, index: int, slot: str) -> str:
-        """Scene body that holds ``slot`` in env ``index``."""
         return self.plan.phase_slots[self.phase][index][slot]
 
     def sample_env(self, task: int) -> tuple[int, int]:
-        """``(0, env)`` whose body carries task ``task``, for mesh sampling."""
+        """``(phase, env)`` whose body carries task ``task``, for mesh sampling."""
         for env, assigned in enumerate(self.plan.assignment[0]):
             if assigned == task:
                 return 0, env
@@ -157,20 +141,18 @@ class TaskTracker:
         return self.roots[entity][0][index], self.roots[entity][1][index]
 
     def touching(self, index: int, slot: str) -> bool:
-        """True while a finger presses the slot's body in env ``index``."""
         return bool(self.contact[self.entity(index, slot)][index])
 
     def note_step(self, lengths) -> None:
-        """Remember the command manager's episode length [steps]. Finish counts come from the env."""
+        """Store episode length [steps]. Finish counts are read from the env."""
         self._steps = np.asarray(lengths, dtype=int).reshape(-1)
 
     def prepare_reset(self) -> None:
-        """Forget the previous episode's finish marks. An explicit evaluator reset calls this."""
+        """Clear finish marks before an explicit evaluator reset."""
         self.finished_steps[:] = -1
         self._active = False
 
     def begin(self, env_ids: torch.Tensor | slice | None, seed: int | None = None) -> None:
-        """Lay the current tasks out in ``env_ids`` and clear their scoring state."""
         if env_ids is None or isinstance(env_ids, slice):
             ids = list(range(self.num_envs))
         else:
@@ -200,7 +182,7 @@ class TaskTracker:
         self._updated_at = -1
 
     def episode_finished(self):
-        """``None``. Each env resets on its own, so there is no shared finish mask."""
+        """``None``. Each env resets on its own."""
         return
 
     def episode_steps(self) -> np.ndarray:
@@ -208,7 +190,6 @@ class TaskTracker:
         return self.finished_steps.copy()
 
     def _write_layout(self, ids: list[int]) -> None:
-        """Pose every body: this env's objects, parked spares, and the work surface."""
         env_ids = torch.tensor(ids, device=self.device)
         inverse = self._entity_slots[self.phase]
         for entity_index, entity in enumerate(self.entities):
@@ -245,7 +226,7 @@ class TaskTracker:
         )
 
     def read_roots(self) -> None:
-        """Copy every body's root pose [m] to the host, positions relative to the env origin."""
+        """Copy root poses to the host. Positions are relative to the env origin [m]."""
         self.roots = {}
         for entity in self.entities:
             data = self.env.scene[entity].data
@@ -253,7 +234,6 @@ class TaskTracker:
             self.roots[entity] = (pos, _host(data.root_quat_w).reshape(-1, 4))
 
     def update(self) -> None:
-        """Score progress once per control step."""
         step = int(self.env.common_step_counter)
         if step == self._updated_at:
             return
@@ -325,10 +305,9 @@ class TaskTracker:
         return poses
 
     def origin(self, index: int) -> np.ndarray:
-        """Env origin [m] of env ``index`` in the simulation frame."""
+        """Env origin [m] in the simulation frame."""
         return self._origins[index]
 
     def clear_outcomes(self) -> None:
-        """Forget latched success and failure. Called on an explicit evaluator reset."""
         self.completed.zero_()
         self.failed.zero_()

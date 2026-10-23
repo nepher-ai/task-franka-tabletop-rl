@@ -3,10 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Robot, physics, and success scoring match ``task-franka-tabletop``.
-
-These checks need Isaac Lab and an installed ``franka_tabletop``. They skip otherwise.
-"""
+"""Robot, physics, and scoring match ``task-franka-tabletop``. Needs Isaac Lab and that package."""
 
 from __future__ import annotations
 

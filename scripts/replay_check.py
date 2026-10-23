@@ -3,15 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Replay a recorded episode in ``task-franka-tabletop``'s own evaluation environment.
+"""Replay a recorded episode in ``task-franka-tabletop``.
 
-A recorded action is an absolute joint target, so the original robot, physics, and scene must follow
-the recorded joint path and finish the same task. This is the check that the dataset is valid
-training data for brains that are scored there. Run it on an episode recorded with ``--jitter 0``:
-the original environment lays the published scene out without jitter.
-
-Example:
-    python scripts/replay_check.py --dataset datasets/tabletop_rl --episode 0
+Actions are absolute joint targets, so the original robot and scene must follow the same path.
+Use an episode recorded with ``--jitter 0``.
 """
 
 import argparse
@@ -33,7 +28,7 @@ args_cli.enable_cameras = True
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Rest everything follows."""
+# Imports that need the simulation app follow.
 
 import tempfile  # noqa: E402
 

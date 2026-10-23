@@ -3,14 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""LeRobot v2.1 dataset writer for the tabletop brains.
+"""LeRobot v2.1 writer. A row is one control step: joints, gripper, tool pose, cameras, and the action.
 
-One dataset holds many episodes and many tasks. A row is one control step: the brain's
-observation (joint position, gripper, tool pose, camera frames) and the action that was applied
-(7 absolute joint targets and a gripper command). The layout is the one LeRobot, openpi (Pi0.5)
-and Isaac-GR00T read; ``meta/modality.json`` carries the GR00T embodiment description.
-
-Parquet needs ``pyarrow`` and videos need ``av``; both are in the ``record`` extra.
+The layout matches LeRobot, openpi, and Isaac-GR00T. Parquet needs ``pyarrow`` and video needs ``av``.
 """
 
 from __future__ import annotations
@@ -33,17 +28,9 @@ _VIDEO_STAT_STRIDE = 10
 
 
 class LeRobotWriter:
-    """Append episodes to a LeRobot v2.1 dataset directory.
+    """Append episodes to a LeRobot v2.1 directory. An existing dataset is extended.
 
-    Args:
-        root: Dataset directory. An existing dataset is extended.
-        fps: Control rate [Hz] of the recorded steps.
-        camera_hw: Frame size of each camera as ``{name: (height, width)}`` [pixels]. Empty for a
-            dataset without videos.
-        robot_type: Value of ``robot_type`` in ``info.json``.
-
-    Raises:
-        ValueError: An existing dataset has another rate or camera set.
+    ``fps`` is the control rate [Hz]. ``camera_hw`` is ``{name: (height, width)}`` [pixels].
     """
 
     def __init__(
@@ -78,13 +65,8 @@ class LeRobotWriter:
     ) -> int:
         """Write one episode and return its index.
 
-        Args:
-            state: Joint position [rad] then gripper in 0..1, shape ``[T, 8]``.
-            action: Absolute joint target [rad] then gripper command in 0..1, shape ``[T, 8]``.
-            eef_pose: Tool pose, position [m] then wxyz quaternion, shape ``[T, 7]``.
-            task: Language instruction of the episode.
-            frames: ``{camera: uint8 [T, H, W, 3]}`` for every camera the writer was built with.
-            extra: Fields stored with the episode in ``episodes.jsonl`` (success, task id, seed).
+        ``state`` and ``action`` are ``[T, 8]`` (joints [rad], then gripper in 0..1). ``eef_pose``
+        is ``[T, 7]`` (position [m], then wxyz). ``frames`` is ``{camera: uint8 [T, H, W, 3]}``.
         """
         length = len(action)
         state, action, eef_pose = (np.asarray(x, dtype=np.float32) for x in (state, action, eef_pose))
@@ -112,7 +94,7 @@ class LeRobotWriter:
         return index
 
     def close(self) -> None:
-        """Write the metadata. Called after every episode, so a crash keeps what was recorded."""
+        """Write metadata. Also called after every episode, so a crash keeps what was recorded."""
         self._flush_meta()
 
     # ------------------------------------------------------------------ files
