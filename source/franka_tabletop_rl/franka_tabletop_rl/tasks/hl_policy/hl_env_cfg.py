@@ -106,6 +106,25 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command.pose_jitter_m = self.pose_jitter_m
         command.layout_seed = self.layout_seed
 
+    def sync_task_selection(self) -> None:
+        """Apply ``task_id`` after play overrides.
+
+        ``__post_init__`` runs before ``env.task_id`` and ``--num_envs``. A scene count still equal
+        to the previous task count follows the new selection. Any other count is kept.
+        """
+        selected = load_benchmark(resolve_bundle(self.env_id)).select(str(self.task_id))
+        previous = tuple(self.task_ids)
+        if previous == selected:
+            return
+        if int(self.scene.num_envs) == len(previous):
+            self.scene.num_envs = len(selected)
+        self.task_ids = selected
+        command = self.commands.ee_pose
+        command.task_ids = selected
+        command.env_id = self.env_id
+        command.pose_jitter_m = self.pose_jitter_m
+        command.layout_seed = self.layout_seed
+
     def play_mode(self):
         """Play defaults. Highlight adds an unspawned camera so Kit loads its rendering app.
 

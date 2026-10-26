@@ -29,12 +29,14 @@ classical planner (hl_policy) -> learned end-effector tracker (ll_policy) -> dam
 
 Both high-level tasks load the benchmark named by `env_id`. The default is `franka-tabletop-rl-v1`
 (`nepher download franka-tabletop-rl-v1`), the 120 tasks of `franka-tabletop-v13`. `franka-tabletop-rl-v0` is the same
-16 tasks as before, in the same file format.
+16 tasks as before, in the same file format. `franka-tabletop-rl-v2` is 16 tasks taken from v1, one for each distinct
+set of success ops, including `one_bottle_in_square_pail`. `franka-tabletop-rl-v3` covers those same op sets and uses
+the next v1 task after v2 wherever v1 has another one. `one_bottle_in_square_pail` stays in v3.
 
 **One stage, all tasks.** The high-level env builds one stage for the selected tasks (`env.task_id=all`, or one task id).
 Each benchmark has one background, named by its stage. Another benchmark can name a different background. `scene.num_envs`
 defaults to one env per task. `--num_envs` is that count or a whole multiple of it (`120`, `240`, ... for v1; `16`, `32`,
-`64`, ... for v0). Env `i` runs task `i % T` and resets on its own, and every task is in the stage together.
+`64`, ... for v0, v2, and v3). Env `i` runs task `i % T` and resets on its own, and every task is in the stage together.
 Unused object positions rest above the cameras. Because every env owns its meshes, the cloner builds one world per env
 (`replicate_physics=False`).
 
@@ -111,7 +113,9 @@ recorded with `--jitter 0` in `task-franka-tabletop`'s own `TabletopEvalEnv`.
 ### eval-nav
 
 `eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates the 16 tasks of v0 with 64 envs, four copies of each task.
-`task-franka-tabletop-rl-v1.yaml` evaluates all 120 tasks of v1 with one env each. `num_envs` is a multiple of the task
+`task-franka-tabletop-rl-v1.yaml` evaluates all 120 tasks of v1 with one env each.
+`task-franka-tabletop-rl-v2.yaml` evaluates the 16 tasks of v2 the same way as v0.
+`task-franka-tabletop-rl-v3.yaml` evaluates the 16 tasks of v3 the same way. `num_envs` is a multiple of the task
 count, and each env resets on its own. The scorer
 `manipulation.multitask.rl` (`episode = success * (0.75 + 0.25 * speed)`) reads the task id of the episode each env
 just finished. The task module's `task_ids_of` tells eval-nav which tasks a bundle runs. The brain-runtime configs

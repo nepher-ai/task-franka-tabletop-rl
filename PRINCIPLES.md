@@ -37,6 +37,6 @@ Policy structure may differ from `task-franka-tabletop`. The scene those policie
 
 ## EnvHub and eval-nav
 
-This project owns `franka-tabletop-rl-v0` (the original 16 tasks) and `franka-tabletop-rl-v1` (all 120 tasks, derived from the `franka-tabletop-v13` data). Both are local EnvHub bundles. The brain-runtime bundles `franka-tabletop-v11` through `franka-tabletop-v13`, and their eval-nav configs, stay untouched.
+This project owns `franka-tabletop-rl-v0` (the original 16 tasks), `franka-tabletop-rl-v1` (all 120 tasks, derived from the `franka-tabletop-v13` data), `franka-tabletop-rl-v2` (16 tasks from v1, one for each distinct set of success ops), and `franka-tabletop-rl-v3` (the same 16 op sets, using the next v1 task after v2 where one exists). All four are local EnvHub bundles. The brain-runtime bundles `franka-tabletop-v11` through `franka-tabletop-v13`, and their eval-nav configs, stay untouched.
 
-`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates v0. `eval-nav/configs/task-franka-tabletop-rl-v1.yaml` evaluates v1.
+`eval-nav/configs/task-franka-tabletop-rl.yaml` evaluates v0. `eval-nav/configs/task-franka-tabletop-rl-v1.yaml` evaluates v1. `eval-nav/configs/task-franka-tabletop-rl-v2.yaml` evaluates v2. `eval-nav/configs/task-franka-tabletop-rl-v3.yaml` evaluates v3.

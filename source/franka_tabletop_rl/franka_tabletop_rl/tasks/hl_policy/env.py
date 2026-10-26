@@ -16,14 +16,16 @@ from franka_tabletop_rl.scene.scene_cfg import mount_stage
 
 
 class HLTabletopEnv(ManagerBasedRLEnv):
-    """Builds the stage plan once ``scene.num_envs`` is final.
+    """Builds the stage plan once ``scene.num_envs`` and ``task_id`` are final.
 
-    eval-nav sets that count after it creates the cfg. ``env.highlight=on`` records up to 16 tasks.
+    eval-nav sets that count after it creates the cfg. Play sets ``env.task_id`` after
+    ``__post_init__``. ``env.highlight=on`` records up to 16 tasks.
     """
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
         from .highlight import Highlight, HighlightCfg, highlight_envs
 
+        cfg.sync_task_selection()
         bundle = resolve_bundle(cfg.env_id)
         benchmark = load_benchmark(bundle)
         layouts = [benchmark.task(task_id) for task_id in cfg.task_ids]
