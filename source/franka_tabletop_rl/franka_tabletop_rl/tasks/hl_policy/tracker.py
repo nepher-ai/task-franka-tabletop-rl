@@ -15,7 +15,7 @@ from collections.abc import Sequence
 import numpy as np
 import torch
 
-from franka_tabletop_rl.benchmark.stage_plan import StagePlan
+from franka_tabletop_rl.benchmark.stage_plan import StagePlan, entity_pose, surface_body_pose
 from franka_tabletop_rl.benchmark.task import TaskLayout, with_jitter, world_position
 from franka_tabletop_rl.benchmark.predicates import task_progress
 from franka_tabletop_rl.scene.contact import slots_in_contact
@@ -72,9 +72,6 @@ class TaskTracker:
         self.phase = 0
         self.task_index = np.array(plan.assignment[0], dtype=int)
         self.entities = plan.entities
-        self._entity_slots = [
-            [{entity: slot for slot, entity in names.items()} for names in phase] for phase in plan.phase_slots
-        ]
         self.pose_jitter_m = float(pose_jitter_m)
         self.device = env.device
         self._seed = int(seed)
@@ -191,27 +188,17 @@ class TaskTracker:
 
     def _write_layout(self, ids: list[int]) -> None:
         env_ids = torch.tensor(ids, device=self.device)
-        inverse = self._entity_slots[self.phase]
         for entity_index, entity in enumerate(self.entities):
-            poses = []
-            for index in ids:
-                slot = inverse[index].get(entity)
-                if slot is None:
-                    position = self.plan.parking[index][entity_index]
-                    quat = (1.0, 0.0, 0.0, 0.0)
-                else:
-                    placement = self.env_layouts[index].by_slot()[slot]
-                    position, quat = placement.position_m, placement.quat_wxyz
-                poses.append(self._world_pose(index, position, quat))
+            poses = [
+                self._world_pose(index, *entity_pose(self.plan, self.env_layouts, index, entity_index, self.phase))
+                for index in ids
+            ]
             self._write(self.env.scene[entity], poses, env_ids)
         for surface_index, name in enumerate(self.plan.surface_entities):
-            poses = []
-            for index in ids:
-                if surface_index == int(self.plan.active_surface[self.phase][index]):
-                    position, quat = self.plan.surface_pose_by_phase[self.phase][index]
-                else:
-                    position, quat = self.plan.parking[index][0], (1.0, 0.0, 0.0, 0.0)
-                poses.append(self._world_pose(index, position, quat))
+            poses = [
+                self._world_pose(index, *surface_body_pose(self.plan, index, surface_index, self.phase))
+                for index in ids
+            ]
             self._write(self.env.scene[name], poses, env_ids)
 
     def _world_pose(self, index: int, position, quat_wxyz) -> list[float]:

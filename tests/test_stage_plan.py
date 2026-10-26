@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import pytest
 
-from franka_tabletop_rl.benchmark.stage_plan import PARK_POSITION_M, plan_stage
+from franka_tabletop_rl.benchmark.stage_plan import (
+    IDENTITY_WXYZ,
+    PARK_POSITION_M,
+    entity_pose,
+    plan_stage,
+    surface_body_pose,
+)
 from franka_tabletop_rl.benchmark.task import ObjectAsset, Placement, TaskLayout
 
 _SURFACE = {
@@ -68,6 +74,30 @@ def test_task_backgrounds_do_not_split_the_stage():
     assert plan.surface_entities == ("surface",)
     wider = plan_stage(layouts, stage, 6)
     assert wider.assignment[0] == (0, 1, 2, 0, 1, 2)
+
+
+def test_entity_pose_is_the_envs_own_layout_not_env_zeros():
+    first = _layout("a", "office", 3)
+    second = _layout("b", "office", 1)
+    second.placements[0].position_m = (0.9, 0.1, 0.02)
+    plan = plan_stage([first, second], _stage(["office"]), 2)
+    env_layouts = [first, second]
+    for column in range(3):
+        assert entity_pose(plan, env_layouts, 0, column) == (first.placements[column].position_m, IDENTITY_WXYZ)
+    assert entity_pose(plan, env_layouts, 1, 0) == ((0.9, 0.1, 0.02), IDENTITY_WXYZ)
+    # Columns the second task leaves empty rest at its parking pose.
+    for column in (1, 2):
+        assert entity_pose(plan, env_layouts, 1, column) == (PARK_POSITION_M, IDENTITY_WXYZ)
+
+
+def test_surface_body_pose_is_the_envs_own_surface():
+    layouts = [_layout("a", "office", 1), _layout("b", "office", 1)]
+    layouts[1].surface_pose = {"pos": [0.6, 0.2, 0.0], "rot": [1.0, 0.0, 0.0, 0.0]}
+    plan = plan_stage(layouts, _stage(["office"]), 2)
+    assert surface_body_pose(plan, 0, 0) == plan.surface_pose_by_phase[0][0]
+    assert surface_body_pose(plan, 1, 0) == plan.surface_pose_by_phase[0][1]
+    assert surface_body_pose(plan, 0, 0) != surface_body_pose(plan, 1, 0)
+    assert surface_body_pose(plan, 1, 1) == (PARK_POSITION_M, IDENTITY_WXYZ)
 
 
 def test_num_envs_must_be_a_multiple_of_the_task_count():

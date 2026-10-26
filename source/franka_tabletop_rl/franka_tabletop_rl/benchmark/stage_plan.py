@@ -24,6 +24,8 @@ PARK_POSITION_M = (0.0, 0.0, 3.0)
 SURFACE_ENTITY = "surface"
 """Scene name of the work-surface body."""
 
+IDENTITY_WXYZ = (1.0, 0.0, 0.0, 0.0)
+
 
 @dataclass(frozen=True)
 class ObjectVariant:
@@ -155,6 +157,30 @@ def explicit_worlds(
             members.append(int(offsets[index]) + pick)
         worlds.append(tuple(members))
     return tuple(worlds), np.ones(num_envs, dtype=np.float64)
+
+
+def entity_pose(
+    plan: StagePlan, env_layouts: Sequence[TaskLayout], env: int, entity_index: int, phase: int = 0
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Env-frame (position [m], wxyz) of object position ``entity_index`` in ``env``.
+
+    An unused position rests at its parking pose. ``env_layouts[env]`` is the layout that env runs.
+    """
+    entity = plan.entities[entity_index]
+    for slot, name in plan.phase_slots[phase][env].items():
+        if name == entity:
+            placement = env_layouts[env].by_slot()[slot]
+            return placement.position_m, placement.quat_wxyz
+    return plan.parking[env][entity_index], IDENTITY_WXYZ
+
+
+def surface_body_pose(
+    plan: StagePlan, env: int, surface_index: int, phase: int = 0
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Env-frame (position [m], wxyz) of work-surface body ``surface_index`` in ``env``."""
+    if surface_index == int(plan.active_surface[phase][env]):
+        return plan.surface_pose_by_phase[phase][env]
+    return plan.parking[env][0], IDENTITY_WXYZ
 
 
 def _background_name(stage: dict) -> str:

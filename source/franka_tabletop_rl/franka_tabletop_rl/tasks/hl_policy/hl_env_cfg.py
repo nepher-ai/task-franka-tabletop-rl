@@ -36,8 +36,9 @@ class CommandsCfg:
 
 @configclass
 class EventCfg:
-    """Default robot pose, then the scene's own object layout."""
+    """Each env's layout on the stage before physics starts. On reset, default robot pose, then the layout."""
 
+    place_layout = EventTerm(func=mdp.place_planned_layout, mode="prestartup")
     reset_scene = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
     reset_layout = EventTerm(func=mdp.reset_tabletop_layout, mode="reset")
 

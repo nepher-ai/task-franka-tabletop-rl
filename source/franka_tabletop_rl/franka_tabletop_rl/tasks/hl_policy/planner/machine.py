@@ -607,10 +607,11 @@ def build_planner(
             variant = (placement.asset.usd, tuple(placement.scale or ()))
             if variant not in sampled:
                 entity = plan.phase_slots[phase][sample][placement.slot]
-                spawn_pos, spawn_quat = plan.start_poses[plan.entities.index(entity)]
+                # place_planned_layout put this prim at its task's placement.
                 world = sample_prim_points(usd, f"/World/envs/env_{sample}/{entity}", points_per_object)
-                spawn_rot = quat_wxyz_to_matrix(np.asarray(spawn_quat, dtype=np.float64))
-                sampled[variant] = (world - (origin + np.asarray(spawn_pos, dtype=np.float64))) @ spawn_rot
+                spawn_rot = quat_wxyz_to_matrix(np.asarray(placement.quat_wxyz, dtype=np.float64))
+                spawn_pos = np.asarray(placement.position_m, dtype=np.float64)
+                sampled[variant] = (world - (origin + spawn_pos)) @ spawn_rot
             task_points[placement.slot] = sampled[variant]
             task_rest[placement.slot] = (
                 np.asarray(placement.position_m, dtype=np.float64),
