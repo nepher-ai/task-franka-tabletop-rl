@@ -190,15 +190,25 @@ def _copy_sidecar(src: Path, dest: Path) -> None:
     _copy_local_layers(src, dest)
 
 
+def _local_layer_refs(src: Path) -> list[str]:
+    """Return the ``./`` layer paths a text USDA or binary USDC references."""
+    with src.open("rb") as file:
+        magic = file.read(8)
+    if magic.startswith(b"#usda"):
+        return re.findall(r"@(\./[^@\s]+)@", src.read_text(encoding="utf-8"))
+    if magic != b"PXR-USDC":
+        return []
+    # Crate files compress their strings, so only USD can list the references.
+    # Importing Usd loads the plugin that registers the crate file format.
+    from pxr import Sdf, Usd  # noqa: F401
+
+    layer = Sdf.Layer.FindOrOpen(str(src))
+    return [ref for ref in layer.GetCompositionAssetDependencies() if ref.startswith("./")]
+
+
 def _copy_local_layers(src: Path, dest: Path) -> None:
-    """Copy ``@./file.usd@`` layers referenced by a text USDA."""
-    try:
-        text = src.read_text(encoding="utf-8")
-    except UnicodeError:
-        return
-    if not text.startswith("#usda"):
-        return
-    for ref in re.findall(r"@(\./[^@\s]+)@", text):
+    """Copy ``@./file.usd@`` layers referenced by a USD layer."""
+    for ref in _local_layer_refs(src):
         child_src = (src.parent / ref).resolve()
         child_dest = (dest.parent / ref).resolve()
         if not child_src.is_file() or child_dest.exists():

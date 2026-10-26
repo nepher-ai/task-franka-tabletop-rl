@@ -93,6 +93,26 @@ def test_a_built_bundle_round_trips(tmp_path: Path):
     assert manifest["version"] == "0.1.0"
 
 
+def test_a_binary_fixture_keeps_its_referenced_layers(tmp_path: Path):
+    pytest.importorskip("pxr")
+    from pxr import Sdf, Usd
+
+    source = tmp_path / "src"
+    _source(source, [("alpha", "lay", "hall")])
+    fixtures = source / "assets" / "fixtures"
+    meshes = Usd.Stage.CreateNew(str(fixtures / "Props" / "meshes.usda"))
+    meshes.DefinePrim("/table_visuals")
+    meshes.Save()
+    (fixtures / "table.usd").unlink()
+    layer = Sdf.Layer.CreateNew(str(fixtures / "table.usd"), args={"format": "usdc"})
+    stage = Usd.Stage.Open(layer)
+    stage.DefinePrim("/table/visuals").GetReferences().AddReference("./Props/meshes.usda", "/table_visuals")
+    stage.Save()
+    out = tmp_path / "out"
+    build_bundle(source, out, "demo", "1.0.0", None)
+    assert (out / "assets" / "fixtures" / "Props" / "meshes.usda").is_file()
+
+
 def test_cached_v1_index_matches_its_files(requires_bundle):
     root = requires_bundle("franka-tabletop-rl-v1")
     benchmark = load_benchmark(root)
