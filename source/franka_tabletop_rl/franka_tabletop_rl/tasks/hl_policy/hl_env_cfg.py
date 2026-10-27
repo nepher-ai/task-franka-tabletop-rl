@@ -36,10 +36,11 @@ class CommandsCfg:
 
 @configclass
 class EventCfg:
-    """Each env's layout on the stage before physics starts. On reset, default robot pose, then the layout."""
+    """Each env's layout on the stage before physics starts. On reset, default robot pose, arm noise, then the layout."""
 
     place_layout = EventTerm(func=mdp.place_planned_layout, mode="prestartup")
     reset_scene = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    reset_arm = EventTerm(func=mdp.reset_arm_start_noise, mode="reset")
     reset_layout = EventTerm(func=mdp.reset_tabletop_layout, mode="reset")
 
 
@@ -72,6 +73,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     env_id: str = DEFAULT_ENV_ID
     task_id: str = ALL_TASKS
     pose_jitter_m: float = 0.0
+    arm_start_noise_rad: float = 0.05
+    """Half range [rad] of the uniform offset on each arm joint at reset. Zero keeps the ready pose."""
     cameras: tuple[str, ...] = ()
     """Observation cameras to spawn. Empty spawns none."""
     layout_seed: int = 1

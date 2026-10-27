@@ -11,6 +11,9 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
 
 # Apertures are centimeters. Focal lengths are 2.1 (exterior), 2.8 (wrist), and 24 (front).
+# Render size matches the LeRobot frame, so recording does not scale a 720p image on the GPU.
+_CAMERA_HEIGHT = 180
+_CAMERA_WIDTH = 320
 _EXTERIOR_LENS = dict(focal_length=2.1, focus_distance=28.0, horizontal_aperture=5.376, vertical_aperture=3.024)
 _WRIST_LENS = dict(focal_length=2.8, focus_distance=28.0, horizontal_aperture=5.376, vertical_aperture=3.024)
 _FRONT_LENS = dict(focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, vertical_aperture=15.29)
@@ -21,8 +24,8 @@ def exterior_left_camera() -> CameraCfg:
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamExteriorLeft",
         update_period=0.0,
-        height=720,
-        width=1280,
+        height=_CAMERA_HEIGHT,
+        width=_CAMERA_WIDTH,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(**_EXTERIOR_LENS),
         offset=CameraCfg.OffsetCfg(
@@ -39,8 +42,8 @@ def exterior_right_camera() -> CameraCfg:
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamExteriorRight",
         update_period=0.0,
-        height=720,
-        width=1280,
+        height=_CAMERA_HEIGHT,
+        width=_CAMERA_WIDTH,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(**_EXTERIOR_LENS),
         offset=CameraCfg.OffsetCfg(
@@ -67,8 +70,8 @@ def front_camera() -> CameraCfg:
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamFront",
         update_period=0.0,
-        height=720,
-        width=1280,
+        height=_CAMERA_HEIGHT,
+        width=_CAMERA_WIDTH,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(**_FRONT_LENS),
         offset=CameraCfg.OffsetCfg(
@@ -85,8 +88,8 @@ def wrist_camera() -> CameraCfg:
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/Gripper/Robotiq_2F_85/base_link/CamWrist",
         update_period=0.0,
-        height=720,
-        width=1280,
+        height=_CAMERA_HEIGHT,
+        width=_CAMERA_WIDTH,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(**_WRIST_LENS),
         offset=CameraCfg.OffsetCfg(

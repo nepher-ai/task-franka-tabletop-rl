@@ -90,7 +90,11 @@ def test_a_built_bundle_round_trips(tmp_path: Path):
     assert [record["name"] for record in written_stage["backgrounds"]] == ["home_office"]
     manifest = yaml.safe_load((out / "manifest.yaml").read_text(encoding="utf-8"))
     assert "preset_scenes" not in manifest
+    assert manifest["type"] == "usd"
     assert manifest["version"] == "0.1.0"
+    # EnvHub rejects a usd bundle without scenes. The scene points at a file the bundle ships.
+    assert [scene["scene_id"] for scene in manifest["scenes"]] == ["all"]
+    assert (out / manifest["scenes"][0]["usd"]).is_file()
 
 
 def test_a_binary_fixture_keeps_its_referenced_layers(tmp_path: Path):

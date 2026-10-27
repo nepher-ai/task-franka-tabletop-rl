@@ -87,6 +87,22 @@ def test_wrapper_reports_the_task_each_env_finished():
     assert wrapped.instructions() == ["task 0", "task 1"]
 
 
+def test_arm_start_offsets_differ_per_round_and_env_and_repeat_for_the_same_seed():
+    from franka_tabletop_rl.tasks.hl_policy.start_noise import arm_start_offsets
+
+    half = 0.05
+    envs = list(range(16))
+    # eval-nav passes seed 100 to every round, so only the round index separates the starts.
+    rounds = [arm_start_offsets(100, round_index, envs, half) for round_index in range(3)]
+    starts = np.concatenate(rounds)
+    assert starts.shape == (48, 7)
+    assert len({tuple(row) for row in starts.tolist()}) == 48
+    assert np.abs(starts).max() <= half
+    assert np.array_equal(rounds[1], arm_start_offsets(100, 1, envs, half))
+    assert np.array_equal(rounds[1][3:5], arm_start_offsets(100, 1, [3, 4], half))
+    assert not np.array_equal(rounds[0], arm_start_offsets(101, 0, envs, half))
+
+
 def test_play_config_import_does_not_load_openusd():
     import pytest
 

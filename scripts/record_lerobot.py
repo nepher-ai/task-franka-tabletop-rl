@@ -25,7 +25,7 @@ parser.add_argument(
     default=None,
     help="Parallel envs. A multiple of the task count. One copy of each task by default.",
 )
-parser.add_argument("--jitter", type=float, default=0.04, help="Per-episode shift [m] of each object.")
+parser.add_argument("--jitter", type=float, default=0.00, help="Per-episode shift [m] of each object.")
 parser.add_argument("--seed", type=int, default=1, help="Seed of the first layout.")
 parser.add_argument(
     "--cameras",

@@ -14,6 +14,9 @@ import isaaclab.sim as sim_utils
 from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
 from franka_tabletop_rl.benchmark.stage import xyzw_from_wxyz
 from franka_tabletop_rl.benchmark.stage_plan import entity_pose, surface_body_pose
+from franka_tabletop_rl.scene.robot import ARM_JOINTS
+
+from ..start_noise import arm_start_offsets
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -22,6 +25,31 @@ if TYPE_CHECKING:
 def reset_tabletop_layout(env: ManagerBasedRLEnv, env_ids: torch.Tensor, pose_command_name: str = "ee_pose") -> None:
     """Write this scene's poses over the spawn pose. Run after ``reset_scene_to_default``."""
     env.command_manager.get_term(pose_command_name).tracker.begin(env_ids)
+
+
+def reset_arm_start_noise(env: ManagerBasedRLEnv, env_ids: torch.Tensor | slice) -> None:
+    """Offset the arm from the ready pose by seeded noise. Run after ``reset_scene_to_default``.
+
+    The half range is ``env.cfg.arm_start_noise_rad`` [rad]. The offsets follow the seed, the reset round and the
+    env index, so every full reset of an evaluation starts from a different but reproducible pose.
+    """
+    half_range = float(env.cfg.arm_start_noise_rad)
+    if half_range <= 0.0:
+        return
+    robot = env.scene["robot"]
+    if isinstance(env_ids, slice):
+        ids = torch.arange(env.num_envs, device=env.device)[env_ids]
+    else:
+        ids = torch.as_tensor(env_ids, device=env.device).long()
+    joint_ids = robot.find_joints(ARM_JOINTS)[0]
+    offsets = arm_start_offsets(env.start_noise_seed, env.start_noise_round, ids.tolist(), half_range, len(joint_ids))
+    rows = ids[:, None]
+    position = robot.data.default_joint_pos.torch[rows, joint_ids].clone()
+    position += torch.as_tensor(offsets, device=env.device, dtype=position.dtype)
+    limits = robot.data.soft_joint_pos_limits.torch[rows, joint_ids]
+    position = position.clamp(limits[..., 0], limits[..., 1])
+    robot.write_joint_position_to_sim_index(position=position, joint_ids=joint_ids, env_ids=env_ids)
+    robot.set_joint_position_target_index(target=position, joint_ids=joint_ids, env_ids=env_ids)
 
 
 def place_planned_layout(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:

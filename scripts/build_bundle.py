@@ -148,11 +148,20 @@ def build_bundle(
     (out / "benchmark.yaml").write_text(header + body, encoding="utf-8")
     manifest = {
         "id": env_id,
+        "type": "usd",
         "name": name or env_id,
         "description": f"{len(payloads)} tabletop tasks in one stage with one background.",
         "category": "manipulation",
         "version": version,
         "benchmark": True,
+        # EnvHub requires a scene for a usd bundle. Evaluation selects tasks through benchmark.yaml instead.
+        "scenes": [
+            {
+                "scene_id": "all",
+                "description": f"{len(payloads)} tabletop tasks in one stage.",
+                "usd": str(stage["fixture"]["usd"]),
+            }
+        ],
     }
     (out / "manifest.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     return len(payloads)

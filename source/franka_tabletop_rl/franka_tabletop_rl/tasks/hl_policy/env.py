@@ -33,6 +33,10 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         cfg.scene.env_spacing = plan.env_spacing
         mount_stage(cfg, bundle, benchmark.stage, plan)
         cfg.stage_plan = plan
+        # Arm start noise follows the latest reset seed and the count of full-env resets (-1 before the first).
+        # An auto-reset keeps the current round.
+        self.start_noise_seed = int(cfg.seed or 0)
+        self.start_noise_round = -1
         self._highlight_envs = ()
         if isinstance(cfg.highlight, HighlightCfg):
             self._highlight_envs = highlight_envs(
@@ -43,6 +47,17 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         if self._highlight_envs:
             length = float(cfg.episode_length_s)
             self.video_recorders.append(Highlight(self, self._highlight_envs, length))
+
+    def reset(self, env_ids=slice(None), *, seed: int | None = None, options=None):
+        """Reset, and note the seed and round that the arm start noise is drawn from.
+
+        eval-nav reseeds with the same seed on every round, so the round index keeps the starts apart.
+        """
+        if seed is not None:
+            self.start_noise_seed = int(seed)
+        if env_ids is None or isinstance(env_ids, slice):
+            self.start_noise_round += 1
+        return super().reset(env_ids, seed=seed, options=options)
 
     def _init_sim(self):
         if self._highlight_envs:
