@@ -27,7 +27,7 @@ def exterior_left_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_EXTERIOR_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(0.05, 0.57, 0.66),
-            # (x, y, z, w). RoboLab authored (-0.393, -0.195, 0.399, 0.805) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (-0.393, -0.195, 0.399, 0.805).
             rot=(-0.195, 0.399, 0.805, -0.393),
             convention="opengl",
         ),
@@ -73,7 +73,7 @@ def front_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_FRONT_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(1.5, 0.0, 1.0),
-            # (x, y, z, w). RoboLab authored (0.653, 0.271, 0.271, 0.653) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (0.653, 0.271, 0.271, 0.653).
             rot=(0.271, 0.271, 0.653, 0.653),
             convention="opengl",
         ),
@@ -91,7 +91,7 @@ def wrist_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_WRIST_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(0.011, -0.031, -0.074),
-            # (x, y, z, w). RoboLab authored (-0.420, 0.570, 0.576, -0.409) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (-0.420, 0.570, 0.576, -0.409).
             rot=(0.570, 0.576, -0.409, -0.420),
             convention="opengl",
         ),

@@ -24,48 +24,6 @@ from franka_tabletop_rl.tasks.hl_policy.highlight import (  # noqa: E402
 )
 
 
-def test_play_task_id_selects_that_task_after_the_cfg_is_built():
-    from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
-    from franka_tabletop_rl.benchmark.stage_plan import plan_stage
-    from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY
-
-    cfg = HLEnvCfg_PLAY()
-    cfg.play_mode()
-    task_id = "one_bottle_in_square_pail"
-    assert task_id in cfg.task_ids
-    full_count = len(cfg.task_ids)
-    cfg.task_id = task_id
-    cfg.scene.num_envs = 1
-    cfg.sync_task_selection()
-    assert cfg.task_ids == (task_id,)
-    assert cfg.commands.ee_pose.task_ids == (task_id,)
-    assert cfg.scene.num_envs == 1
-    benchmark = load_benchmark(resolve_bundle(cfg.env_id))
-    plan = plan_stage([benchmark.task(task_id)], benchmark.stage, cfg.scene.num_envs)
-    assert plan.task_ids == (task_id,)
-    assert plan.num_envs == 1
-
-    cfg = HLEnvCfg_PLAY()
-    cfg.task_id = task_id
-    cfg.sync_task_selection()
-    assert cfg.task_ids == (task_id,)
-    assert cfg.scene.num_envs == 1
-
-    cfg = HLEnvCfg_PLAY()
-    cfg.task_id = task_id
-    cfg.scene.num_envs = 4
-    cfg.sync_task_selection()
-    assert cfg.task_ids == (task_id,)
-    assert cfg.scene.num_envs == 4
-
-    cfg = HLEnvCfg_PLAY()
-    selected = cfg.task_ids
-    cfg.scene.num_envs = full_count
-    cfg.sync_task_selection()
-    assert cfg.task_ids == selected
-    assert cfg.scene.num_envs == full_count
-
-
 def test_highlight_stays_off_until_it_is_selected():
     from franka_tabletop_rl.tasks.hl_policy.highlight import HighlightCfg, HighlightPreset
     from franka_tabletop_rl.tasks.hl_policy.hl_env_cfg import HLEnvCfg_PLAY

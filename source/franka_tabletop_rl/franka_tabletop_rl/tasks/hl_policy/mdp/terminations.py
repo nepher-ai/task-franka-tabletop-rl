@@ -22,7 +22,7 @@ def _tracker(env: ManagerBasedRLEnv, pose_command_name: str):
 
 
 def task_success(env: ManagerBasedRLEnv, pose_command_name: str = "ee_pose") -> torch.Tensor:
-    """True once the success expression has held on the current state for 0.5 s, as RoboLab checks it."""
+    """True once the success expression has held on the current state for 0.5 s."""
     return torch.as_tensor(_tracker(env, pose_command_name).success_now, device=env.device)
 
 

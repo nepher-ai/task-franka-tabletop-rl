@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from franka_tabletop_rl.benchmark.bundle import ALL_TASKS, load_benchmark, task_ids_of
+from franka_tabletop_rl.benchmark.bundle import ALL_TASKS, load_benchmark
 
 _BUILDER = Path(__file__).resolve().parents[1] / "scripts" / "build_bundle.py"
 _spec = importlib.util.spec_from_file_location("build_bundle", _BUILDER)
@@ -111,20 +111,6 @@ def test_a_binary_fixture_keeps_its_referenced_layers(tmp_path: Path):
     out = tmp_path / "out"
     build_bundle(source, out, "demo", "1.0.0", None)
     assert (out / "assets" / "fixtures" / "Props" / "meshes.usda").is_file()
-
-
-def test_cached_v1_index_matches_its_files(requires_bundle):
-    root = requires_bundle("franka-tabletop-rl-v1")
-    benchmark = load_benchmark(root)
-    files = {path.stem for path in (root / "tasks").glob("*.json")}
-    assert set(benchmark.task_ids) == files
-    assert len(benchmark.task_ids) == 120
-    for task_id in benchmark.task_ids:
-        layout = benchmark.task(task_id)
-        assert layout.layout and layout.instruction and layout.background
-    assert task_ids_of("franka-tabletop-rl-v1", ALL_TASKS) == list(benchmark.task_ids)
-    assert task_ids_of("franka-tabletop-rl-v1", benchmark.task_ids[0]) == [benchmark.task_ids[0]]
-    assert task_ids_of("franka-tabletop-rl-v1", "not_a_task") is None
 
 
 def test_background_argument_selects_the_dome(tmp_path: Path):

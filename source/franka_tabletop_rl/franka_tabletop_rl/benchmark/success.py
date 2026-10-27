@@ -3,9 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Instantaneous episode success, following RoboLab's termination terms. Positions are [m].
+"""Instantaneous episode success. Positions are [m].
 
-RoboLab ends an episode when a stateless predicate holds on the current state. A slot in ``grasp``
+An episode ends when a stateless predicate holds on the current state. A slot in ``grasp``
 has to be free of the fingers now, instead of having been grasped and released. The only history is
 the first-placement step that ``in_order`` compares. Contact-force checks need object-pair sensors,
 so ``stacked`` and ``on_top`` use pose checks only. ``task_progress`` keeps the latched score that
@@ -28,7 +28,7 @@ SIDE_CONE_RAD = np.pi / 4.0
 # Footprint slack [m] of a stacked block on its support.
 STACK_XY_TOL_M = 0.01
 # The lowest corner of a stacked block may differ from the support top by this much [m]. It stands in
-# for RoboLab's block-to-block contact check.
+# for a block-to-block contact check.
 STACK_GAP_M = 0.01
 # Height difference [m] below which an object is level with its reference when it is not grasped.
 LEVEL_TOL_M = 0.1
@@ -181,7 +181,7 @@ def _on_side(item: dict, reference: dict, side: str, free: bool) -> bool:
     index, sign = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}[side]
     if sign * delta[index] <= 0.0 or sign * delta[index] / planar < np.cos(SIDE_CONE_RAD):
         return False
-    # As in RoboLab, the level check applies only when no grasp requirement does.
+    # The level check applies only when no grasp requirement does.
     return not free or abs(float(delta[2])) <= LEVEL_TOL_M
 
 

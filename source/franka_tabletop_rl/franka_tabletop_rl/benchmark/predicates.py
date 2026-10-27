@@ -72,7 +72,7 @@ def on_top_of(item_pos: np.ndarray, support_pos: np.ndarray, xy_tol_m: float, z_
 def relative_side(item_pos: np.ndarray, reference_pos: np.ndarray, side: str, gap_m: float = 0.04) -> np.ndarray:
     """Whether the item is ``gap_m`` [m] to the ``left`` (+y), ``right`` (-y), ``front`` (-x), or ``behind`` (+x).
 
-    The robot faces +x from the env origin, so ``front`` is toward the robot, as in RoboLab.
+    The robot faces +x from the env origin, so ``front`` is toward the robot.
     """
     delta = np.asarray(item_pos) - np.asarray(reference_pos)
     axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}[side]

@@ -5,8 +5,8 @@
 
 """Per-env task state. Env ``i`` runs task ``i % T`` and resets on its own.
 
-Progress uses the latched benchmark predicates. Success follows RoboLab: the success expression has to
-hold on the current state, and then it has to keep holding for :data:`SUCCESS_HOLD_S`.
+Progress uses the latched benchmark predicates. The success expression has to hold on the current
+state, and then it has to keep holding for :data:`SUCCESS_HOLD_S`.
 """
 
 from __future__ import annotations

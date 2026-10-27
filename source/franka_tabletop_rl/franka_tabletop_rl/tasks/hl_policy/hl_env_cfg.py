@@ -45,7 +45,7 @@ class EventCfg:
 
 @configclass
 class TerminationsCfg:
-    """RoboLab-style success held for 0.5 s, a failure-only stop for a lost object, and the episode limit."""
+    """Success held for 0.5 s, a failure-only stop for a lost object, and the episode limit."""
 
     success = DoneTerm(func=mdp.task_success)
     object_lost = DoneTerm(func=mdp.object_lost)
