@@ -45,7 +45,7 @@ class EventCfg:
 
 @configclass
 class TerminationsCfg:
-    """The benchmark's success after a 0.5 s hold, an unrecoverable object, and the episode limit."""
+    """RoboLab-style success held for 0.5 s, a failure-only stop for a lost object, and the episode limit."""
 
     success = DoneTerm(func=mdp.task_success)
     object_lost = DoneTerm(func=mdp.object_lost)
@@ -54,7 +54,7 @@ class TerminationsCfg:
 
 @configclass
 class RewardsCfg:
-    """No reward: success is scored by the benchmark predicates."""
+    """No reward: success is scored by ``benchmark.success``."""
 
 
 @configclass

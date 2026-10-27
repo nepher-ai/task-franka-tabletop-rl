@@ -79,7 +79,7 @@ def placement_satisfies(
 
 
 def _beside(side: str, target_pos, target_half, item_half) -> np.ndarray:
-    axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, 1.0), "behind": (0, -1.0)}[side]
+    axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}[side]
     index, sign = axis
     gap = float(target_half[index] + item_half[index] + 0.05)
     center = np.array(target_pos, dtype=np.float64)

@@ -11,8 +11,14 @@ classical planner (hl_policy) -> learned end-effector tracker (ll_policy) -> dam
 
 - **High level.** `ClassicalTabletopPlanner` picks each object a task asks to move, with a top-down grasp that it searches
   on the object's mesh, carries it to the pose that satisfies that goal, lets go, and retries a failed grasp. A task that
-  must be left upright is left alone and scores 0. It reads the benchmark's own success predicate, so it stops when the
+  must be left upright is left alone and scores 0. It reads the latched benchmark progress, so it stops when the
   task is done.
+- **Episode success.** Success follows RoboLab. The success expression has to hold on the current state, with no memory
+  of earlier grasps or placements, and it has to keep holding for 0.5 s. An object that must be moved has to be free of
+  the fingers (a stack is exempt), and a pickup has to still be in them. `in_order` keeps only the first-placement step of
+  each object. Contact-force checks are not ported, so `stacked` also needs the lowest corner within 1 cm of the support
+  top. `front` is toward the robot (-x) and `behind` is away from it (+x). A lost object ends the episode as a failure
+  and never counts as success. The checks are in `franka_tabletop_rl/benchmark/success.py`.
 - **Low level.** An RSL-RL PPO policy tracks the planner's tool pose and gripper command. Its 7-D action is a tool-pose delta
   plus the gripper. `IkJointCommandAction` turns it into absolute joint targets, which is the action space of the brains.
 - **Scene identity.** The robot, physics, sensors, and success predicates come from `task-franka-tabletop` at commit

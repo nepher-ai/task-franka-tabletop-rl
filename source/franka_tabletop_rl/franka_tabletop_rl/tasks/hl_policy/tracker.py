@@ -5,7 +5,8 @@
 
 """Per-env task state. Env ``i`` runs task ``i % T`` and resets on its own.
 
-Scoring uses the benchmark predicates, so a task counts as solved when the brain benchmark does.
+Progress uses the latched benchmark predicates. Success follows RoboLab: the success expression has to
+hold on the current state, and then it has to keep holding for :data:`SUCCESS_HOLD_S`.
 """
 
 from __future__ import annotations
@@ -15,13 +16,14 @@ from collections.abc import Sequence
 import numpy as np
 import torch
 
-from franka_tabletop_rl.benchmark.stage_plan import StagePlan, entity_pose, surface_body_pose
-from franka_tabletop_rl.benchmark.task import TaskLayout, with_jitter, world_position
 from franka_tabletop_rl.benchmark.predicates import task_progress
+from franka_tabletop_rl.benchmark.stage_plan import StagePlan, entity_pose, surface_body_pose
+from franka_tabletop_rl.benchmark.success import note_placements, task_satisfied
+from franka_tabletop_rl.benchmark.task import TaskLayout, with_jitter, world_position
 from franka_tabletop_rl.scene.contact import slots_in_contact
 from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
 
-# A finished pose has to hold this long before the episode ends. It matches the brain benchmark.
+# A finished pose has to hold this long before the episode ends.
 SUCCESS_HOLD_S = 0.5
 # An object this far below the table or this far from the env origin is gone.
 LOST_Z_M = -0.15
@@ -37,10 +39,11 @@ def _commit_hold(
     hold_s: float,
     dt: float,
 ) -> tuple[dict[str, bool], list[str], float, bool]:
-    """Commit a finished pose only after :data:`SUCCESS_HOLD_S`.
+    """Commit a finished pose to the latch only after :data:`SUCCESS_HOLD_S`.
 
     A score of 1 leaves the stored latch unchanged and keeps counting. A lower score stores partial
-    progress and clears the hold. Returns the latch, entry order, hold time [s], and success.
+    progress and clears the hold. Returns the latch, entry order, hold time [s], and whether the
+    latch was committed. The episode outcome comes from ``task_satisfied`` instead.
     """
     if score >= 1.0 - 1e-9:
         hold_s += dt
@@ -83,6 +86,8 @@ class TaskTracker:
         self.latched: list[dict[str, bool]] = [{} for _ in range(self.num_envs)]
         self.entered: list[list[str]] = [[] for _ in range(self.num_envs)]
         self.hold_s = np.zeros(self.num_envs, dtype=np.float64)
+        self.success_hold_s = np.zeros(self.num_envs, dtype=np.float64)
+        self.first_placed: list[dict[str, int]] = [{} for _ in range(self.num_envs)]
         self.progress = np.zeros(self.num_envs, dtype=np.float64)
         self.lost = np.zeros(self.num_envs, dtype=bool)
         self.success_now = np.zeros(self.num_envs, dtype=bool)
@@ -172,6 +177,8 @@ class TaskTracker:
             for held in self.held.values():
                 held[index] = False
             self.hold_s[index] = 0.0
+            self.success_hold_s[index] = 0.0
+            self.first_placed[index] = {}
             self.progress[index] = 0.0
             self.lost[index] = False
             self.success_now[index] = False
@@ -240,9 +247,10 @@ class TaskTracker:
             spec = self.specs[task]
             if spec is None:
                 continue
+            poses = self._poses(index, layout)
             score, latched, entered = task_progress(
                 spec,
-                self._poses(index, layout),
+                poses,
                 held,
                 touching,
                 self.latched[index],
@@ -251,7 +259,7 @@ class TaskTracker:
                 gripper_open=bool(self.gripper_open[index]),
             )
             self.progress[index] = score
-            committed, order, hold, success = _commit_hold(
+            committed, order, hold, _ = _commit_hold(
                 self.latched[index],
                 self.entered[index],
                 latched,
@@ -263,7 +271,11 @@ class TaskTracker:
             self.latched[index] = committed
             self.entered[index] = order
             self.hold_s[index] = hold
-            self.success_now[index] = success
+            step_index = int(self.env.episode_length_buf[index])
+            note_placements(spec, poses, touching, self.first_placed[index], step_index, side=layout.side)
+            satisfied = task_satisfied(spec, poses, touching, self.first_placed[index], side=layout.side)
+            self.success_hold_s[index] = self.success_hold_s[index] + dt if satisfied else 0.0
+            self.success_now[index] = bool(self.success_hold_s[index] >= SUCCESS_HOLD_S)
             self.lost[index] = any(self.is_lost(self.root(index, slot)[0]) for slot in self.required[task])
         done = torch.as_tensor(self.success_now, device=self.device)
         self.completed |= done

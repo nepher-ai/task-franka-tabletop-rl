@@ -58,11 +58,25 @@ class TabletopRLEvalEnv:
         """Steps at finish. ``-1`` means the env has not finished."""
         return self._tracker.episode_steps()
 
+    def episode_ee_speeds(self):
+        """Tool speed samples [m/s] per env, or ``None`` when the pose term does not record them."""
+        report = getattr(self._pose_command, "episode_ee_speeds", None)
+        if report is None:
+            return None
+        return report()
+
     def reset(self, *args, **kwargs):
         self._tracker.prepare_reset()
+        discard = getattr(self._pose_command, "discard_ee_speed", None)
+        if discard is not None:
+            discard()
         result = self._env.reset(*args, **kwargs)
         self._tracker.clear_outcomes()
         return result
+
+    @property
+    def _pose_command(self):
+        return self._env.unwrapped.command_manager.get_term("ee_pose")
 
     def step(self, action):
         return self._env.step(action)

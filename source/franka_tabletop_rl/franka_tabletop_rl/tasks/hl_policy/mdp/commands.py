@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 
 import isaaclab.utils.math as math_utils
@@ -21,6 +22,7 @@ from franka_tabletop_rl.benchmark.bundle import DEFAULT_ENV_ID, load_benchmark, 
 from franka_tabletop_rl.frames import EE_BODY, grip_down_quat, tcp_pose_b
 from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
 
+from ..ee_speed import EeSpeedTrace
 from ..planner import ClassicalTabletopPlanner, build_planner
 from ..tracker import TaskTracker
 
@@ -49,6 +51,8 @@ class HLPoseCommand(CommandTerm):
             seed=cfg.layout_seed,
         )
         self.planner: ClassicalTabletopPlanner = build_planner(env, self.tracker, benchmark.stage)
+        self._ee_speed = EeSpeedTrace(self.num_envs)
+        self._ee_speed_step = -1
         self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
         self.pose_command_b[:, 2] = 0.26
         self.pose_command_b[:, 3:] = grip_down_quat(torch.zeros(1, device=self.device))[0]
@@ -61,6 +65,7 @@ class HLPoseCommand(CommandTerm):
         return self.pose_command_b
 
     def reset(self, env_ids: Sequence[int] | None = None) -> dict[str, float]:
+        self._ee_speed.reset(_env_indices(env_ids, self.num_envs))
         extras = super().reset(env_ids)
         if env_ids is None or isinstance(env_ids, slice):
             ids = torch.arange(self.num_envs, device=self.device)
@@ -69,6 +74,23 @@ class HLPoseCommand(CommandTerm):
         self.planner.reset(ids.cpu().numpy())
         self.grip_target[ids] = 0.0
         return extras
+
+    def discard_ee_speed(self) -> None:
+        """Drop tool-speed samples on the next reset. The evaluator calls this before ``reset``."""
+        self._ee_speed.discard()
+
+    def episode_ee_speeds(self) -> list[np.ndarray]:
+        """Tool speed samples [m/s] of the finished episode, or the live one if it has not reset."""
+        return self._ee_speed.series()
+
+    def note_ee_speed(self) -> None:
+        """Record the tool position once per control step, before a reset can teleport it."""
+        step = int(self._env.common_step_counter)
+        if step == self._ee_speed_step:
+            return
+        self._ee_speed_step = step
+        pos, _ = tcp_pose_b(self.robot, self.body_idx)
+        self._ee_speed.observe(pos.detach().cpu().numpy(), float(self._env.step_dt))
 
     def _update_metrics(self):
         pos, _ = tcp_pose_b(self.robot, self.body_idx)
@@ -82,9 +104,10 @@ class HLPoseCommand(CommandTerm):
         self.tracker.update()
         self.tracker.note_step(self._env.episode_length_buf.detach().cpu().numpy())
         pos, _ = tcp_pose_b(self.robot, self.body_idx)
+        pos_np = pos.detach().cpu().numpy()
         angle = self.robot.data.joint_pos.torch[:, self.finger_idx]
         closure = (angle / GRIPPER_CLOSED_RAD).clamp(0.0, 1.0)
-        target, yaw, grip = self.planner.step(pos.detach().cpu().numpy(), closure.detach().cpu().numpy())
+        target, yaw, grip = self.planner.step(pos_np, closure.detach().cpu().numpy())
         self.pose_command_b[:, :3] = torch.as_tensor(target, device=self.device, dtype=torch.float32)
         yaw_t = torch.as_tensor(yaw, device=self.device, dtype=torch.float32)
         self.pose_command_b[:, 3:] = math_utils.quat_unique(grip_down_quat(yaw_t))
@@ -103,6 +126,12 @@ class HLPoseCommandCfg(CommandTermCfg):
     pose_jitter_m: float = 0.0
     """Per-episode shift [m] of each object in the table plane. Zero keeps the benchmark layout."""
     layout_seed: int = 1
+
+
+def _env_indices(env_ids: Sequence[int] | slice | None, num_envs: int) -> list[int]:
+    if env_ids is None or isinstance(env_ids, slice):
+        return list(range(num_envs))
+    return [int(index) for index in torch.as_tensor(env_ids).reshape(-1).tolist()]
 
 
 class HLGripCommand(CommandTerm):
