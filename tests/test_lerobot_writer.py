@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The writer must produce a LeRobot v2.1 dataset that a loader can index without surprises."""
-
 from __future__ import annotations
 
 import json

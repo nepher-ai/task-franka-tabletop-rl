@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Franka arm with a 2F-85 gripper and an absolute joint-position action."""
+"""Franka arm with a 2F-85 gripper."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ ARM_JOINTS = [f"panda_joint{index}" for index in range(1, 8)]
 
 
 def franka_2f85(prim_path: str = "{ENV_REGEX_NS}/Robot"):
-    """Articulation at the env origin. The USD already includes the 2F-85 gripper."""
+    """Articulation at the env origin. The USD includes the gripper."""
     robot = FRANKA_ROBOTIQ_GRIPPER_CFG.replace(prim_path=prim_path)
     robot.spawn = robot.spawn.replace(
         usd_path=packaged_asset("robots", "franka_robotiq_2f85.usd"),
@@ -62,7 +62,7 @@ def with_position_iterations(robot, iterations: int):
 
 
 def _solver_props(props: list, position_iterations: int = 64) -> list:
-    """Self-collision off, ``position_iterations`` position iterations, 0 velocity iterations."""
+    """Self-collision off, ``position_iterations`` position iterations, and no velocity iterations."""
     updated = []
     for prop in props:
         if isinstance(prop, PhysxArticulationCfg):
@@ -81,9 +81,9 @@ def _solver_props(props: list, position_iterations: int = 64) -> list:
 
 
 def _arm_drives(actuators: dict) -> dict:
-    """Shoulder effort 87 N·m and forearm 12 N·m, both at stiffness 400 and damping 80.
+    """Shoulder 87 N·m and forearm 12 N·m, both at stiffness 400 and damping 80.
 
-    The finger uses the drive authored on the asset. Its velocity limit is 5 rad/s.
+    The finger keeps the asset drive. Its velocity limit is 5 rad/s.
     """
     finger = actuators["gripper_drive"].replace(
         joint_names_expr=["finger_joint"],

@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Installation script for the 'franka_tabletop_rl' python package."""
-
 import os
 
 import tomllib

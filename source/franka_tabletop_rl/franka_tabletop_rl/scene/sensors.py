@@ -3,19 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Exterior, wrist, and front cameras.
-
-The left exterior camera is the over-shoulder view at (0.05, 0.57, 0.66) [m]
-in the env frame. The right exterior camera is that view mirrored across the
-robot's center plane, at (0.05, -0.57, 0.66) [m], with the same lens. The wrist
-camera is parented to the gripper base link. The front camera is RoboLab's
-viewport: 1.5 m in front of the robot and 1.0 m up, looking back at the table.
-It is an observation camera, the same as the exterior and wrist views. The env origin is the table
-surface, so these positions are not shifted up with the table. The exterior and
-wrist cameras render at 720x1280. A recording run writes the front, left exterior,
-and wrist views as one 720x1280 frame per shard, four by four cells of 180x320,
-and renders the front camera at that cell size.
-"""
+"""Exterior, wrist, and front cameras. Poses are in the env frame, whose origin is the table."""
 
 from __future__ import annotations
 
@@ -29,7 +17,7 @@ _FRONT_LENS = dict(focal_length=24.0, focus_distance=400.0, horizontal_aperture=
 
 
 def exterior_left_camera() -> CameraCfg:
-    """Fixed over-shoulder view of the table from the left."""
+    """Over-shoulder view from the left."""
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamExteriorLeft",
         update_period=0.0,
@@ -39,7 +27,7 @@ def exterior_left_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_EXTERIOR_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(0.05, 0.57, 0.66),
-            # (x, y, z, w). RoboLab authored (-0.393, -0.195, 0.399, 0.805) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (-0.393, -0.195, 0.399, 0.805).
             rot=(-0.195, 0.399, 0.805, -0.393),
             convention="opengl",
         ),
@@ -47,11 +35,7 @@ def exterior_left_camera() -> CameraCfg:
 
 
 def exterior_right_camera() -> CameraCfg:
-    """Over-shoulder view from the right, the left camera mirrored across the center plane.
-
-    The look direction is the left camera's look direction with Y flipped, and the
-    image stays upright. This is the second exterior view FLUX 3 Action was trained on.
-    """
+    """Over-shoulder view from the right: the left camera mirrored across the center plane, kept upright."""
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamExteriorRight",
         update_period=0.0,
@@ -69,11 +53,7 @@ def exterior_right_camera() -> CameraCfg:
 
 
 def finger_contact(name: str) -> ContactSensorCfg:
-    """Contact force [N] between one Robotiq inner finger and the tabletop objects.
-
-    ``prim_path`` must resolve to one body. The scene fills ``filter_prim_paths_expr``
-    with one prim per placement, in placement order, before the simulation starts.
-    """
+    """Contact force [N] on one inner finger. The scene fills one filter per object, in order."""
     return ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/.*" + name,
         update_period=0.0,
@@ -83,7 +63,7 @@ def finger_contact(name: str) -> ContactSensorCfg:
 
 
 def front_camera() -> CameraCfg:
-    """Front view of the table, matching RoboLab's egocentric mirrored viewport."""
+    """Front view of the table."""
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/CamFront",
         update_period=0.0,
@@ -93,7 +73,7 @@ def front_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_FRONT_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(1.5, 0.0, 1.0),
-            # (x, y, z, w). RoboLab authored (0.653, 0.271, 0.271, 0.653) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (0.653, 0.271, 0.271, 0.653).
             rot=(0.271, 0.271, 0.653, 0.653),
             convention="opengl",
         ),
@@ -101,7 +81,7 @@ def front_camera() -> CameraCfg:
 
 
 def wrist_camera() -> CameraCfg:
-    """Camera on the gripper base. The prim name avoids a baked camera in the robot USD."""
+    """Camera on the gripper base. The prim name avoids a camera baked into the robot USD."""
     return CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/Gripper/Robotiq_2F_85/base_link/CamWrist",
         update_period=0.0,
@@ -111,7 +91,7 @@ def wrist_camera() -> CameraCfg:
         spawn=sim_utils.PinholeCameraCfg(**_WRIST_LENS),
         offset=CameraCfg.OffsetCfg(
             pos=(0.011, -0.031, -0.074),
-            # (x, y, z, w). RoboLab authored (-0.420, 0.570, 0.576, -0.409) as (w, x, y, z).
+            # (x, y, z, w). Authored as (w, x, y, z): (-0.420, 0.570, 0.576, -0.409).
             rot=(0.570, 0.576, -0.409, -0.420),
             convention="opengl",
         ),

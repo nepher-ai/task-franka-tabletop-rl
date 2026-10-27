@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Shared path setup and skip markers for the tabletop RL tests."""
-
 from __future__ import annotations
 
 import sys
@@ -39,23 +37,7 @@ except ImportError:
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "requires_bundle: the EnvHub bundle is not in the nepher cache")
     config.addinivalue_line("markers", "requires_isaaclab: Isaac Lab is not importable")
-
-
-@pytest.fixture
-def requires_bundle():
-    """Skip when ``env_id`` is not cached. Pass the id, or use the default v1 bundle."""
-
-    def _need(env_id: str = "franka-tabletop-rl-v1"):
-        from franka_tabletop_rl.benchmark.bundle import resolve_bundle
-
-        try:
-            return resolve_bundle(env_id)
-        except FileNotFoundError as exc:
-            pytest.skip(str(exc))
-
-    return _need
 
 
 @pytest.fixture

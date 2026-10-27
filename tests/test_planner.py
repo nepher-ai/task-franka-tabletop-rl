@@ -3,10 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Grasp search and the planner's stage logic, without a simulator.
-
-Run with the Isaac Lab python, for example ``isaaclab.bat -p -m pytest tests/test_planner.py``.
-"""
+"""Grasp search and planner stages, without a simulator."""
 
 from __future__ import annotations
 
@@ -88,7 +85,8 @@ def test_reach_limit_pulls_far_and_near_targets_into_the_arm_s_workspace():
     _, _, _, reach_limit = _machine()
     far = reach_limit(np.array([0.7, 0.5]), 0.24)
     assert np.hypot(*far) <= 0.77
-    assert reach_limit(np.array([0.2, 0.0]), 0.24)[0] >= 0.38
+    assert reach_limit(np.array([0.2, 0.0]), 0.24)[0] == pytest.approx(0.30)
+    assert np.allclose(reach_limit(np.array([0.32, 0.0]), 0.24), [0.32, 0.0])
     assert np.allclose(reach_limit(np.array([0.5, 0.1]), 0.24), [0.5, 0.1])
 
 
@@ -134,7 +132,7 @@ def test_drop_offsets_stay_inside_the_footprint_and_do_not_repeat():
 
 
 class _Sim:
-    """Perfect tracker and gripper: the tool reaches its target, a closed gripper carries what it holds."""
+    """Tool that reaches its target. A closed gripper carries what it holds."""
 
     def __init__(self, planner, tracker, size):
         self.planner, self.tracker, self.size = planner, tracker, size
@@ -188,6 +186,7 @@ def _fixture():
         task_index=np.zeros(1, dtype=int),
         specs=(spec,),
         task_layouts=(scene,),
+        env_layouts=[scene],
         roots=roots,
         contact=contact,
         latched=[{}],
@@ -254,6 +253,146 @@ def test_goal_queue_covers_each_op_and_leaves_upright_unsupported():
     assert [goal.slot for goal in chosen.goals] == ["item"]
     upright = queue({"op": "upright", "object": "cube"})
     assert not upright.supported and upright.goals == ()
+
+
+def test_a_settled_contact_lifts_even_when_the_fingers_nearly_close():
+    ClassicalTabletopPlanner, Stage, _, _ = _machine()
+    for touching, expected in ((True, Stage.LIFT), (False, Stage.RECOVER)):
+        tracker, points, rest = _fixture()
+        tracker.contact["item"][0] = touching
+        planner = ClassicalTabletopPlanner(tracker, points, rest)
+        planner.reset([0])
+        context = planner.contexts[0]
+        context.current = 0
+        context.stage = Stage.CLOSE
+        context.timer = 6
+        context.previous_closure = 0.95
+        context.grasp_center = np.array([0.55, -0.2, 0.04])
+        context.grasp_yaw = 0.0
+        planner._close(context, 0, context.grasp_center, 0.95)
+        assert context.stage == expected
+
+
+def test_any_goal_follows_the_jittered_layout():
+    ClassicalTabletopPlanner, _, _, _ = _machine()
+    cube = ObjectAsset("cube", (0.047, 0.047, 0.047), "item", "cube.usd")
+    plate = ObjectAsset("plate", (0.1, 0.1, 0.02), "item", "plate.usd")
+    bin_ = ObjectAsset("bin", (0.3, 0.2, 0.1), "container", "bin.usd")
+    names = {"cube": "item", "plate": "plate", "bin": "container"}
+    success = {
+        "op": "any",
+        "checks": [
+            {"op": "in_container", "object": "plate", "container": "bin"},
+            {"op": "in_container", "object": "cube", "container": "bin"},
+        ],
+    }
+    spec = spec_from_success("t", success, 40.0, names)
+    published = [
+        Placement("item", cube, (0.50, 0.0, 0.02), "item"),
+        Placement("plate", plate, (0.90, 0.40, 0.02), "item"),
+        Placement("container", bin_, (0.5, 0.25, 0.05), "container"),
+    ]
+    shifted = [
+        Placement("item", cube, (0.90, 0.40, 0.02), "item"),
+        Placement("plate", plate, (0.50, 0.0, 0.02), "item"),
+        Placement("container", bin_, (0.5, 0.25, 0.05), "container"),
+    ]
+    tracker = SimpleNamespace(
+        num_envs=1,
+        task_ids=("t",),
+        task_index=np.zeros(1, dtype=int),
+        specs=(spec,),
+        task_layouts=(TaskLayout("t", "lay", "office", "oak", "either", published, spec=spec),),
+        env_layouts=[TaskLayout("t", "lay", "office", "oak", "either", shifted, spec=spec)],
+    )
+    planner = ClassicalTabletopPlanner(tracker, [{}], [{}])
+    planner.reset([0])
+    assert planner.contexts[0].goals[0].slot == "plate"
+
+
+def test_the_first_two_ticks_hold_the_measured_tool_pose():
+    ClassicalTabletopPlanner, _, _, _ = _machine()
+    tracker, points, rest = _fixture()
+    planner = ClassicalTabletopPlanner(tracker, points, rest)
+    planner.reset([0])
+    tcp = np.array([[0.40, 0.05, 0.22]])
+    for _ in range(2):
+        positions, _, _ = planner.step(tcp, np.array([0.0]))
+        assert np.allclose(positions[0], tcp[0])
+
+
+def test_outside_drops_onto_the_table_and_skips_a_second_resting_pick():
+    from franka_tabletop_rl.tasks.hl_policy.planner.targets import _clear_of
+
+    center = _clear_of(
+        np.array([0.5, 0.0, 0.20]),
+        np.array([0.02, 0.02, 0.017]),
+        np.array([0.5, 0.2, 0.05]),
+        np.array([0.1, 0.1, 0.05]),
+        np.eye(3),
+        np.array([0.547, 0.0, 0.0]),
+        np.array([0.35, 0.5, 0.02]),
+    )
+    assert center[2] == pytest.approx(0.017)
+
+    ClassicalTabletopPlanner, _, _, _ = _machine()
+    cube = ObjectAsset("cube", (0.047, 0.047, 0.047), "item", "cube.usd")
+    bin_ = ObjectAsset("bin", (0.3, 0.2, 0.1), "container", "bin.usd")
+    success = {
+        "op": "all",
+        "checks": [
+            {"op": "outside", "object": "cube", "container": "bin"},
+            {"op": "resting", "object": "cube"},
+        ],
+    }
+    spec = spec_from_success("t", success, 40.0, {"cube": "item", "bin": "container"})
+    placements = [
+        Placement("item", cube, (0.55, -0.2, 0.12), "item"),
+        Placement("container", bin_, (0.5, 0.25, 0.05), "container"),
+    ]
+    scene = TaskLayout("t", "lay", "office", "oak", "take it out", placements, spec=spec)
+    tracker = SimpleNamespace(
+        num_envs=1,
+        task_ids=("t",),
+        task_index=np.zeros(1, dtype=int),
+        specs=(spec,),
+        task_layouts=(scene,),
+        env_layouts=[scene],
+    )
+    planner = ClassicalTabletopPlanner(tracker, [{}], [{}])
+    planner.reset([0])
+    assert [goal.op for goal in planner.contexts[0].goals] == ["outside"]
+
+
+def test_table_box_uses_the_task_surface_and_falls_back_without_a_stage():
+    pytest.importorskip("isaaclab")
+    from franka_tabletop_rl.tasks.hl_policy.planner.machine import table_box
+
+    layout = TaskLayout(
+        "t",
+        "lay",
+        "office",
+        "maple",
+        "set the table",
+        surface_pose={"pos": [0.60, 0.02, 0.0]},
+    )
+    stage = {
+        "surface": "oak",
+        "surfaces": [
+            {
+                "name": "maple",
+                "table_m": [0.7, 1.0, 0.03],
+                "center_xy": [0.547, 0.0],
+                "table_z_m": 0.0,
+            }
+        ],
+    }
+    center, half = table_box(stage, layout)
+    assert np.allclose(center, [0.60, 0.02, 0.0])
+    assert np.allclose(half, [0.35, 0.5, 0.015])
+    fallback_center, fallback_half = table_box(None, layout)
+    assert np.allclose(fallback_center, [0.547, 0.0, 0.0])
+    assert np.allclose(fallback_half, [0.35, 0.5, 0.02])
 
 
 def test_planner_carries_the_item_over_the_container_and_lets_go():

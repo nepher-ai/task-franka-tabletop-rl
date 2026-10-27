@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Hierarchical environment whose one stage holds every selected task."""
+"""Hierarchical environment: one stage holds every selected task."""
 
 from __future__ import annotations
 
@@ -16,17 +16,16 @@ from franka_tabletop_rl.scene.scene_cfg import mount_stage
 
 
 class HLTabletopEnv(ManagerBasedRLEnv):
-    """Manager environment with every selected task in one stage.
+    """Builds the stage plan once ``scene.num_envs`` and ``task_id`` are final.
 
-    ``scene.num_envs`` is only final when the env is built, because eval-nav sets it after it
-    creates the cfg. The stage plan and the bodies are built here, before the scene is cloned.
-
-    ``env.highlight=on`` records up to 16 tasks for one episode.
+    eval-nav sets that count after it creates the cfg. Play sets ``env.task_id`` after
+    ``__post_init__``. ``env.highlight=on`` records up to 16 tasks.
     """
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
         from .highlight import Highlight, HighlightCfg, highlight_envs
 
+        cfg.sync_task_selection()
         bundle = resolve_bundle(cfg.env_id)
         benchmark = load_benchmark(bundle)
         layouts = [benchmark.task(task_id) for task_id in cfg.task_ids]
@@ -36,7 +35,9 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         cfg.stage_plan = plan
         self._highlight_envs = ()
         if isinstance(cfg.highlight, HighlightCfg):
-            self._highlight_envs = highlight_envs(len(cfg.task_ids), plan.num_envs, int(cfg.seed or 0))
+            self._highlight_envs = highlight_envs(
+                len(cfg.task_ids), plan.num_envs, int(cfg.seed or 0), tasks=cfg.highlight_tasks
+            )
         with planned_worlds(plan):
             super().__init__(cfg, render_mode, **kwargs)
         if self._highlight_envs:

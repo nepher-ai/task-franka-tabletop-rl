@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Hierarchical Franka tabletop pick-and-place."""
+"""Hierarchical Franka tabletop tasks."""
 
 from __future__ import annotations
 
@@ -16,11 +16,7 @@ __version__ = "0.1.0"
 
 
 def __getattr__(name: str) -> Any:
-    """Lazy export used by eval-nav through ``task_module``.
-
-    ``task_ids_of`` does not import Isaac Lab. ``wrap_for_eval`` does, because the wrapper
-    reads tensors from a live environment.
-    """
+    """Lazy exports for eval-nav. ``task_ids_of`` does not import Isaac Lab. ``wrap_for_eval`` does."""
     if name == "wrap_for_eval":
         from .tasks.hl_policy.eval_compat import wrap_for_eval
 

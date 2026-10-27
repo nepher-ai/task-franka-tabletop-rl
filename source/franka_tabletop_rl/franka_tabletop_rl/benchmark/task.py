@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""One benchmark task: the objects on the table and the success expression."""
+"""One benchmark task: objects on the table and the success expression."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ TASK_TIME_LIMIT_S = 40.0
 
 @dataclass(frozen=True)
 class ObjectAsset:
-    """One rigid mesh named by a task file."""
+    """One rigid mesh from a task file."""
 
     name: str
     size_m: tuple[float, float, float]
@@ -29,8 +29,6 @@ class ObjectAsset:
 
 @dataclass
 class Placement:
-    """One object on the table."""
-
     slot: str
     asset: ObjectAsset
     position_m: tuple[float, float, float]
@@ -42,8 +40,6 @@ class Placement:
 
 @dataclass
 class TaskLayout:
-    """Published layout of one task."""
-
     task_id: str
     layout: str
     background: str
@@ -58,12 +54,10 @@ class TaskLayout:
         return {placement.slot: placement for placement in self.placements}
 
     def names(self) -> dict[str, str]:
-        """Role to asset name, for instruction text."""
         return {placement.role: placement.asset.name.replace("_", " ") for placement in self.placements}
 
 
 def asset_from_record(record: dict) -> ObjectAsset:
-    """Build an object from a task placement."""
     try:
         name = str(record["name"])
         usd = str(record["usd"])
@@ -76,11 +70,7 @@ def asset_from_record(record: dict) -> ObjectAsset:
 
 
 def layout_from_payload(payload: dict, *, time_limit_s: float = TASK_TIME_LIMIT_S) -> TaskLayout:
-    """Parse a ``tasks/<task_id>.json`` file.
-
-    Raises:
-        ValueError: The file omits its layout, background, surface, or instruction.
-    """
+    """Parse a ``tasks/<task_id>.json`` file."""
     task_id = str(payload["task_id"])
     for key in ("layout", "background", "surface", "instruction"):
         if not isinstance(payload.get(key), str) or not payload[key]:
@@ -115,7 +105,7 @@ def layout_from_payload(payload: dict, *, time_limit_s: float = TASK_TIME_LIMIT_
 
 
 def with_jitter(layout: TaskLayout, seed: int, pose_jitter_m: float) -> TaskLayout:
-    """Shift a fixed layout in the table plane. The meshes stay the ones in ``layout``."""
+    """Shift object positions in the table plane by up to ``pose_jitter_m`` [m]. Meshes stay put."""
     if pose_jitter_m <= 0.0:
         return layout
     rng = np.random.default_rng(int(seed))
@@ -154,11 +144,7 @@ def with_jitter(layout: TaskLayout, seed: int, pose_jitter_m: float) -> TaskLayo
 def world_position(
     position_m: tuple[float, float, float], origin: tuple[float, float, float]
 ) -> tuple[float, float, float]:
-    """Task-frame position plus the environment origin.
-
-    ``write_root_pose_to_sim`` takes the simulation world frame. The origin is not zero once
-    several envs share a stage.
-    """
+    """Task-frame position [m] plus the env origin, in the simulation frame."""
     x, y, z = (float(value) for value in position_m)
     ox, oy, oz = (float(value) for value in origin)
     return (x + ox, y + oy, z + oz)

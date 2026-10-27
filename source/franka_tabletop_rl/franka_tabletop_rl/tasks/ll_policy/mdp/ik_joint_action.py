@@ -3,12 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Relative tool-pose action that is turned into absolute joint targets by damped least-squares IK.
+"""Relative tool-pose action turned into absolute joint targets by damped least-squares IK.
 
-The 7-D action is ``[dx, dy, dz, drx, dry, drz, grip]``. The first six entries move the tool frame
-(see :mod:`franka_tabletop_rl.frames`) relative to its current pose in the robot root frame. The
-last entry closes the gripper when it is positive. Each step writes absolute targets for the seven
-arm joints and the finger joint, which is the action space of the brain benchmark.
+The action is ``[dx, dy, dz, drx, dry, drz, grip]``. A positive grip entry closes the gripper.
+Each step writes absolute targets for the seven arm joints and the finger, in [rad].
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class IkJointCommandAction(DifferentialInverseKinematicsAction):
-    """Relative tool-pose IK plus a binary gripper, producing absolute joint targets."""
+    """Relative tool-pose IK plus a binary gripper. The applied command is absolute joint targets."""
 
     cfg: IkJointCommandActionCfg
 
@@ -47,12 +45,12 @@ class IkJointCommandAction(DifferentialInverseKinematicsAction):
 
     @property
     def joint_command(self) -> torch.Tensor:
-        """Absolute targets of the last step [rad]: seven arm joints then the finger joint, shape ``[N, 8]``."""
+        """Last absolute targets [rad]: seven arm joints then the finger, ``[N, 8]``."""
         return self._joint_command
 
     @property
     def gripper_closed(self) -> torch.Tensor:
-        """True where the last action closed the gripper, shape ``[N]``."""
+        """True where the last action closed the gripper, ``[N]``."""
         return self._closed
 
     def process_actions(self, actions: torch.Tensor):

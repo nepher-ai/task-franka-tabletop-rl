@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Register the Franka tabletop RL tasks. Imported via the isaaclab.tasks entry point."""
+"""Register the tabletop RL tasks. Imported through the isaaclab.tasks entry point."""
 
 from franka_tabletop_rl.tasks.checkpoint import prefer_checkpoint_file
 

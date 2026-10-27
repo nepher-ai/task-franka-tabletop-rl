@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Policy files and training logs next to this task project, not inside the Python package."""
+"""Checkpoints and logs beside this task project, outside the Python package."""
 
 from __future__ import annotations
 
@@ -13,31 +13,26 @@ from pathlib import Path
 
 
 def packaged_asset(*parts: str) -> str:
-    """Absolute path of a file shipped under ``franka_tabletop_rl/assets``."""
+    """Path of a file under ``franka_tabletop_rl/assets``."""
     return str(Path(__file__).resolve().parent.joinpath("assets", *parts))
 
 
 def project_root() -> Path:
-    """``task-franka-tabletop-rl`` directory."""
     return Path(__file__).resolve().parents[3]
 
 
 def log_dir() -> Path:
-    """Directory that holds the tracker training runs.
-
-    Isaac Lab joins ``experiment_name`` onto ``logs/rsl_rl``. An absolute path replaces that
-    prefix, so runs land here instead of the Isaac Lab log directory.
-    """
+    """Tracker training runs. An absolute path replaces Isaac Lab's ``logs/rsl_rl`` prefix."""
     return project_root() / "logs" / "rsl_rl" / "franka_tabletop_ll_ee_tracking"
 
 
 def best_policy_path() -> Path:
-    """Published tracker checkpoint for benchmark play and eval-nav."""
+    """Published tracker checkpoint."""
     return project_root() / "best_policy" / "best_policy.pt"
 
 
 def play_video_dir() -> Path:
-    """Directory for the ``--highlight`` play videos."""
+    """Directory for highlight play videos."""
     return best_policy_path().parent / "videos" / "highlight"
 
 
@@ -50,12 +45,8 @@ def sync_best_policy(
 ) -> str:
     """Copy the chosen checkpoint to ``best_policy/best_policy.pt`` and return that path.
 
-    The source is ``explicit_checkpoint``, else an absolute ``load_checkpoint`` that already
-    exists, else the latest match under the experiment directory, else the file that is already
-    in ``best_policy/``.
-
-    Raises:
-        FileNotFoundError: No checkpoint can be found.
+    Uses ``explicit_checkpoint``, else an existing absolute ``load_checkpoint``, else the latest
+    log match, else the file already published.
     """
     destination = best_policy_path()
     destination.parent.mkdir(parents=True, exist_ok=True)

@@ -3,11 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Turn a success expression into the ordered goals the planner will attempt.
+"""Success expressions as planner goals. ``any`` and ``choose`` keep the objects nearest home.
 
-``all`` keeps every goal. ``in_order`` keeps that order. ``any`` and ``choose`` keep the goals
-whose objects are nearest a home position, decided when the episode layout is known. A task that
-asks for ``upright`` is not attempted: the planner has no regrasp.
+``in_order`` keeps that order. A task that asks for ``upright`` is not attempted.
 """
 
 from __future__ import annotations
@@ -44,11 +42,7 @@ class HoldGoal:
 
 @dataclass(frozen=True)
 class GoalQueue:
-    """Goals one env will run, in the order it should prefer them.
-
-    ``ordered`` is true for ``in_order``: the planner must not skip ahead to a nearer object.
-    ``supported`` is false when the task needs a skill this planner does not have.
-    """
+    """Goals for one env. ``ordered`` forbids skipping ahead. ``supported`` is false without a skill."""
 
     goals: tuple[PlaceGoal | HoldGoal, ...]
     ordered: bool
@@ -56,16 +50,7 @@ class GoalQueue:
 
 
 def compile_goals(check: Check | None, positions: dict[str, tuple[float, float]], home_xy=(0.45, 0.0)) -> GoalQueue:
-    """Goals for one laid-out task.
-
-    Args:
-        check: The task's success expression. ``None`` is unsupported.
-        positions: Slot to an xy position [m] on the table, usually the published layout.
-        home_xy: Point [m] the nearest-object choice is measured from.
-
-    Returns:
-        An empty unsupported queue when the expression is missing or contains ``upright``.
-    """
+    """Goals for one layout. ``positions`` are slot xy [m]. Missing or ``upright`` checks are unsupported."""
     if check is None or _has_upright(check):
         return GoalQueue((), False, False)
     chosen = _select(check, positions, np.asarray(home_xy, dtype=np.float64))

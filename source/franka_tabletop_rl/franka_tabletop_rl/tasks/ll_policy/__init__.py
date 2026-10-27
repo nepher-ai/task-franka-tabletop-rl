@@ -6,8 +6,8 @@
 """Low-level tool-pose tracker.
 
 Registered environments:
-  Nepher-FrankaTabletopRL-LL-v0       training (4096 envs, observation noise on)
-  Nepher-FrankaTabletopRL-LL-Play-v0  evaluation (32 envs, noise off)
+  Nepher-FrankaTabletopRL-LL-v0       training (4096 envs, observation noise)
+  Nepher-FrankaTabletopRL-LL-Play-v0  evaluation (32 envs, no noise)
 """
 
 import gymnasium as gym

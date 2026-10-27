@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Success predicates on object poses. Positions are in meters."""
+"""Success predicates on object poses. Positions are [m]."""
 
 from __future__ import annotations
 
@@ -18,18 +18,10 @@ def inside(
     half_extents: np.ndarray,
     container_quat_wxyz: np.ndarray | None = None,
 ) -> np.ndarray:
-    """True when the item position is inside the container box.
+    """Whether the item center is inside the container box.
 
-    ``half_extents`` are the container's local half sizes. The box is open upward: one
-    container-height of air above the rim still counts, so an object sitting in a
-    shallow bin is inside when its center is above the rim. ``container_quat_wxyz`` is
-    the box orientation. Without it the box is axis-aligned in the scene frame.
-
-    Args:
-        item_pos: Item positions [m], shape [N, 3].
-        container_pos: Container positions [m], shape [N, 3].
-        half_extents: Container half sizes [m], shape [3] or [N, 3].
-        container_quat_wxyz: Container orientation, scalar-first, shape [4] or [N, 4].
+    ``half_extents`` are local half sizes [m]. The box is open upward by one container height.
+    Without ``container_quat_wxyz`` (wxyz) the box is axis-aligned. Positions are ``[N, 3]``.
     """
     delta = np.asarray(item_pos, dtype=np.float64) - np.asarray(container_pos, dtype=np.float64)
     if container_quat_wxyz is not None:
@@ -41,7 +33,6 @@ def inside(
 
 
 def _world_to_body(quat_wxyz: np.ndarray, delta: np.ndarray) -> np.ndarray:
-    """Rotate scene-frame offsets into the container frame. ``quat_wxyz`` is scalar-first."""
     quat = np.asarray(quat_wxyz, dtype=np.float64)
     vector = np.asarray(delta, dtype=np.float64)
     if quat.ndim == 1:
@@ -63,13 +54,7 @@ def _world_to_body(quat_wxyz: np.ndarray, delta: np.ndarray) -> np.ndarray:
 
 
 def on_footprint(item_pos: np.ndarray, support_pos: np.ndarray, support_half: np.ndarray) -> np.ndarray:
-    """True when the item's horizontal position lies in the support footprint and the item is above it.
-
-    Args:
-        item_pos: Item positions [m], shape [N, 3].
-        support_pos: Support positions [m], shape [N, 3].
-        support_half: Support half sizes [m], shape [3] or [N, 3].
-    """
+    """Whether the item's xy lies in the support footprint and the item is above it. Positions [m]."""
     delta = np.asarray(item_pos) - np.asarray(support_pos)
     half = np.asarray(support_half)
     horizontal = (np.abs(delta[..., 0]) <= half[..., 0]) & (np.abs(delta[..., 1]) <= half[..., 1])
@@ -77,7 +62,7 @@ def on_footprint(item_pos: np.ndarray, support_pos: np.ndarray, support_half: np
 
 
 def on_top_of(item_pos: np.ndarray, support_pos: np.ndarray, xy_tol_m: float, z_tol_m: float) -> np.ndarray:
-    """True when the item sits above the support within a horizontal tolerance."""
+    """Whether the item is above the support, within ``xy_tol_m`` [m] and ``z_tol_m`` [m]."""
     delta = np.asarray(item_pos) - np.asarray(support_pos)
     horizontal = np.linalg.norm(delta[..., :2], axis=-1) <= xy_tol_m
     vertical = (delta[..., 2] > 0.0) & (delta[..., 2] <= z_tol_m)
@@ -85,29 +70,28 @@ def on_top_of(item_pos: np.ndarray, support_pos: np.ndarray, xy_tol_m: float, z_
 
 
 def relative_side(item_pos: np.ndarray, reference_pos: np.ndarray, side: str, gap_m: float = 0.04) -> np.ndarray:
-    """True when the item is on the named side of the reference in the table plane.
+    """Whether the item is ``gap_m`` [m] to the ``left`` (+y), ``right`` (-y), ``front`` (-x), or ``behind`` (+x).
 
-    Sides are ``left`` (+y), ``right`` (-y), ``front`` (+x), and ``behind`` (-x).
+    The robot faces +x from the env origin, so ``front`` is toward the robot.
     """
     delta = np.asarray(item_pos) - np.asarray(reference_pos)
-    axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, 1.0), "behind": (0, -1.0)}[side]
+    axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}[side]
     index, sign = axis
     return delta[..., index] * sign >= gap_m
 
 
 def lifted(item_pos: np.ndarray, table_z_m: float, height_m: float = 0.05) -> np.ndarray:
-    """True when the item is above the table by ``height_m`` [m]."""
+    """Whether the item is at least ``height_m`` [m] above ``table_z_m``."""
     return np.asarray(item_pos)[..., 2] >= table_z_m + height_m
 
 
 def upright(quat_wxyz: np.ndarray, min_w: float = 0.85) -> np.ndarray:
-    """True when a wxyz quaternion is close to identity."""
+    """Whether a wxyz quaternion is within ``min_w`` of identity."""
     quat = np.asarray(quat_wxyz)
     return np.abs(quat[..., 0]) >= min_w
 
 
 def _body_to_world(quat_wxyz: np.ndarray) -> np.ndarray:
-    """Rotation that takes body-frame offsets into the scene frame. ``quat_wxyz`` is scalar-first."""
     w, x, y, z = np.asarray(quat_wxyz, dtype=np.float64).reshape(-1)[:4]
     return np.array(
         [
@@ -120,7 +104,6 @@ def _body_to_world(quat_wxyz: np.ndarray) -> np.ndarray:
 
 
 def _oriented_corners(pose: dict) -> np.ndarray:
-    """Eight corners [m] of the pose's oriented box, shape [8, 3]."""
     origin = np.asarray(pose["pos"], dtype=np.float64).reshape(-1, 3)[0]
     half = np.asarray(pose["half"], dtype=np.float64).reshape(-1)[:3]
     signs = np.array([[sx, sy, sz] for sx in (-1.0, 1.0) for sy in (-1.0, 1.0) for sz in (-1.0, 1.0)])
@@ -128,32 +111,29 @@ def _oriented_corners(pose: dict) -> np.ndarray:
 
 
 def _lowest_z(pose: dict) -> float:
-    """World-frame bottom [m] of the pose's oriented box."""
     return float(_oriented_corners(pose)[:, 2].min())
 
 
 def _fraction_inside(item: dict, container: dict) -> float:
-    """Share of the item's corners that lie in the container's open-top box."""
     corners = _oriented_corners(item)
     mask = inside(corners, container["pos"], container["half"], container.get("quat"))
     return float(np.mean(mask))
 
 
 def latch_key(goal: Goal) -> str:
-    """Identity of one stage. Two checks on the same object must not share a latch."""
+    """Latch id of one stage, so two checks on the same object stay distinct."""
     return f"{goal.op}:{goal.slot}:{goal.target}"
 
 
 def _let_go(slot: str, held: dict[str, bool], in_contact: dict[str, bool], gripper_open: bool) -> bool:
-    """True when the slot was held, the fingers are open, and contact has ended.
+    """Whether the slot was held, the fingers are open, and contact has ended.
 
-    A missing contact entry counts as still touching, so a missing sensor cannot pass.
+    A missing contact entry still counts as touching.
     """
     return bool(held.get(slot, False) and not in_contact.get(slot, True) and gripper_open)
 
 
 def all_of(*masks: np.ndarray) -> np.ndarray:
-    """Elementwise conjunction."""
     result = np.ones_like(np.asarray(masks[0]), dtype=bool)
     for mask in masks:
         result = result & np.asarray(mask, dtype=bool)
@@ -171,14 +151,10 @@ def task_progress(
     *,
     gripper_open: bool = True,
 ) -> tuple[float, dict[str, bool], list[str]]:
-    """Latched subtask progress in ``[0, 1]``.
+    """Latched subtask progress in ``[0, 1]``, the updated latch, and the ``in_container`` entry order.
 
-    A grasp alone scores 0. Placing an object, opening the gripper, and ending contact
-    scores 1 for that object. ``all`` averages those scores, ``any`` takes the max, and
-    ``choose`` averages the top ``k``. ``latched`` keeps a finished object finished.
-    ``entered`` is the order in which named objects first satisfied ``in_container``.
-
-    Returns the score, the updated latch, and the updated entry order.
+    A grasp alone scores 0. Release after the pose scores 1. ``all`` averages, ``any`` takes the max,
+    and ``choose`` averages the top ``k``.
     """
     chosen = side or spec.side
     if spec.check is None:

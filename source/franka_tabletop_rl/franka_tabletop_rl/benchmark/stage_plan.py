@@ -3,11 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Plan one Isaac Lab stage for every task of a benchmark.
+"""One stage for every selected task. Env ``i`` runs task ``i % T``.
 
-A benchmark has one background, taken from its stage. Another benchmark can name a different one.
-Env ``i`` runs task ``i % T``. ``num_envs`` is a multiple of the task count, so every task runs
-in the same step and extra envs are whole extra copies. Unused object positions share one park pose.
+``num_envs`` is a multiple of the task count. The background is the one named by the stage.
 """
 
 from __future__ import annotations
@@ -26,10 +24,12 @@ PARK_POSITION_M = (0.0, 0.0, 3.0)
 SURFACE_ENTITY = "surface"
 """Scene name of the work-surface body."""
 
+IDENTITY_WXYZ = (1.0, 0.0, 0.0, 0.0)
+
 
 @dataclass(frozen=True)
 class ObjectVariant:
-    """What decides the mesh an env puts at a position."""
+    """USD path, scale, and kinematic flag of one mesh."""
 
     usd: str
     scale: tuple[float, ...] | None
@@ -38,7 +38,7 @@ class ObjectVariant:
 
 @dataclass
 class StagePlan:
-    """Bodies of one stage and which task each env runs."""
+    """Bodies of one stage and the task each env runs."""
 
     phases: tuple[str, ...]
     """The benchmark background, as a one-element tuple."""
@@ -47,10 +47,7 @@ class StagePlan:
     """Selected tasks, in benchmark order."""
 
     assignment: tuple[tuple[int, ...], ...]
-    """``assignment[0][env]`` is an index into ``task_ids``. Env ``i`` runs task ``i % T``.
-
-    ``num_envs`` is a multiple of the task count, so each task is assigned equally often.
-    """
+    """``assignment[0][env]`` indexes ``task_ids``. Env ``i`` runs task ``i % T``."""
 
     entities: tuple[str, ...]
     """Scene names of the object positions, in position order."""
@@ -97,7 +94,7 @@ class StagePlan:
         return len(self.phases)
 
     def choice_by_name(self) -> dict[str, tuple[int, ...]]:
-        """Variant index per env for every scene asset that has several variants."""
+        """Variant index per env for each multi-variant asset."""
         choices = dict(zip(self.entities, self.choices, strict=True))
         for name, column in zip(self.surface_entities, self.surface_choices, strict=True):
             choices[name] = column
@@ -105,20 +102,10 @@ class StagePlan:
 
 
 def plan_stage(layouts: Sequence[TaskLayout], stage: dict, num_envs: int) -> StagePlan:
-    """Plan ``num_envs`` envs for ``layouts``.
-
-    Env ``i`` runs task ``i % T``. The dome is the stage background, the same one for every task.
-    A different benchmark names its own background in its stage. ``num_envs`` is ``T``, ``2T``, ``3T``,
-    and so on, so the stage holds every selected task at once.
-
-    Args:
-        layouts: Selected tasks, in benchmark order.
-        stage: The bundle's ``assets/stage.json``.
-        num_envs: Parallel envs. A multiple of the number of tasks, and at least that number.
+    """Plan ``num_envs`` envs. ``num_envs`` is a multiple of ``len(layouts)`` and at least that large.
 
     Raises:
-        ValueError: There are no tasks, ``num_envs`` is not a multiple of the task count, or a task
-            places no object.
+        ValueError: There are no tasks, the count is not a multiple, or a task places no object.
     """
     if not layouts:
         raise ValueError("a stage needs at least one task")
@@ -151,13 +138,10 @@ def explicit_worlds(
     choices: Mapping[str, Sequence[int]],
     num_envs: int,
 ) -> tuple[tuple[tuple[int, ...], ...], np.ndarray]:
-    """One world per env, in the form the cloner's combination planner returns.
-
-    The cloner's own planner would enumerate every combination of variants. A stage needs only the
-    ``num_envs`` combinations its envs use.
+    """The ``num_envs`` variant combinations the stage uses, instead of every combination.
 
     Raises:
-        ValueError: An asset's choice is outside its variants, or lists the wrong number of envs.
+        ValueError: A choice is outside its variants, or lists the wrong number of envs.
     """
     for name, picks in choices.items():
         if name in asset_names and len(picks) != num_envs:
@@ -175,8 +159,31 @@ def explicit_worlds(
     return tuple(worlds), np.ones(num_envs, dtype=np.float64)
 
 
+def entity_pose(
+    plan: StagePlan, env_layouts: Sequence[TaskLayout], env: int, entity_index: int, phase: int = 0
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Env-frame (position [m], wxyz) of object position ``entity_index`` in ``env``.
+
+    An unused position rests at its parking pose. ``env_layouts[env]`` is the layout that env runs.
+    """
+    entity = plan.entities[entity_index]
+    for slot, name in plan.phase_slots[phase][env].items():
+        if name == entity:
+            placement = env_layouts[env].by_slot()[slot]
+            return placement.position_m, placement.quat_wxyz
+    return plan.parking[env][entity_index], IDENTITY_WXYZ
+
+
+def surface_body_pose(
+    plan: StagePlan, env: int, surface_index: int, phase: int = 0
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Env-frame (position [m], wxyz) of work-surface body ``surface_index`` in ``env``."""
+    if surface_index == int(plan.active_surface[phase][env]):
+        return plan.surface_pose_by_phase[phase][env]
+    return plan.parking[env][0], IDENTITY_WXYZ
+
+
 def _background_name(stage: dict) -> str:
-    """The one dome this benchmark uses."""
     name = stage.get("background")
     if isinstance(name, str) and name:
         return name
@@ -206,7 +213,6 @@ def _variant(placement: Placement) -> ObjectVariant:
 
 
 def _pack_single(layouts: Sequence[TaskLayout], assignment: tuple[tuple[int, ...], ...]):
-    """One column per object index. Env ``i`` contributes task ``assignment[0][i]``."""
     rows = [_objects(layouts[task]) for task in assignment[0]]
     return _columns(rows)
 
@@ -249,7 +255,6 @@ def _start_pose(rows, index: int):
 
 
 def _surfaces(layouts: Sequence[TaskLayout], stage: dict, assignment) -> dict:
-    """One work-surface body. Each env picks the mesh its task names."""
     num_envs = len(assignment[0])
     names: list[str] = []
     choices = []

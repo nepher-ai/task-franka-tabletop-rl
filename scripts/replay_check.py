@@ -3,15 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Replay a recorded episode in ``task-franka-tabletop``'s own evaluation environment.
+"""Replay a recorded episode in ``task-franka-tabletop``.
 
-A recorded action is an absolute joint target, so the original robot, physics, and scene must follow
-the recorded joint path and finish the same task. This is the check that the dataset is valid
-training data for brains that are scored there. Run it on an episode recorded with ``--jitter 0``:
-the original environment lays the published scene out without jitter.
-
-Example:
-    python scripts/replay_check.py --dataset datasets/tabletop_rl --episode 0
+Actions are absolute joint targets, so the original robot and scene must follow the same path.
+Use an episode recorded with ``--jitter 0``.
 """
 
 import argparse
@@ -23,6 +18,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Replay a recorded episode in the original tabletop environment.")
 parser.add_argument("--dataset", type=str, required=True, help="LeRobot dataset directory.")
 parser.add_argument("--episode", type=int, default=0, help="Episode index to replay.")
+parser.add_argument("--env-id", type=str, default="franka-tabletop-rl-v1", help="EnvHub bundle that owns the recorded task.")
 parser.add_argument("--max_joint_error", type=float, default=0.15, help="Largest allowed |joint error| [rad].")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -32,7 +28,7 @@ args_cli.enable_cameras = True
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Rest everything follows."""
+# Imports that need the simulation app follow.
 
 import tempfile  # noqa: E402
 
@@ -61,7 +57,7 @@ def main() -> None:
     actions = np.asarray(table["action"], dtype=np.float32)
     states = np.asarray(table["observation.state"], dtype=np.float32)
 
-    bundle = resolve_bundle()
+    bundle = resolve_bundle(args_cli.env_id)
     benchmark = load_benchmark(bundle)
     scene = str(benchmark.record(task_id)["layout"])
     view = legacy_bundle_view(bundle, tempfile.mkdtemp(prefix="tabletop-replay-"))
