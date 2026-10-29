@@ -17,7 +17,7 @@ import yaml
 from .stage import read_stage
 from .task import TaskLayout, layout_from_payload
 
-DEFAULT_ENV_ID = "franka-tabletop-rl-v0"
+DEFAULT_ENV_ID = "franka-tabletop-rl-v7"
 ALL_TASKS = "all"
 """Task selector that means every task of the benchmark."""
 

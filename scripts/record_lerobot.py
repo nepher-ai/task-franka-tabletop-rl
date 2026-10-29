@@ -38,7 +38,7 @@ parser.add_argument(
     ),
 )
 parser.add_argument("--image_hw", type=int, nargs=2, default=(180, 320), help="Camera frame size [pixels]: H W.")
-parser.add_argument("--max_steps", type=int, default=6000, help="Give up after this many control steps.")
+parser.add_argument("--max_steps", type=int, default=4800, help="Give up after this many control steps.")
 parser.add_argument("--keep_failed", action="store_true", default=False, help="Also save episodes that fail.")
 parser.add_argument("--checkpoint", type=str, default=None, help="Tracker checkpoint file.")
 AppLauncher.add_app_launcher_args(parser)

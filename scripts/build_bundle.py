@@ -200,19 +200,28 @@ def _copy_sidecar(src: Path, dest: Path) -> None:
 
 
 def _local_layer_refs(src: Path) -> list[str]:
-    """Return the ``./`` layer paths a text USDA or binary USDC references."""
+    """Return relative layer paths a text USDA or binary USDC references."""
     with src.open("rb") as file:
         magic = file.read(8)
     if magic.startswith(b"#usda"):
-        return re.findall(r"@(\./[^@\s]+)@", src.read_text(encoding="utf-8"))
-    if magic != b"PXR-USDC":
-        return []
-    # Crate files compress their strings, so only USD can list the references.
-    # Importing Usd loads the plugin that registers the crate file format.
-    from pxr import Sdf, Usd  # noqa: F401
+        refs = re.findall(r"@([^@\s]+)@", src.read_text(encoding="utf-8"))
+    elif magic == b"PXR-USDC":
+        # Crate files compress their strings, so only USD can list the references.
+        # Importing Usd loads the plugin that registers the crate file format.
+        from pxr import Sdf, Usd  # noqa: F401
 
-    layer = Sdf.Layer.FindOrOpen(str(src))
-    return [ref for ref in layer.GetCompositionAssetDependencies() if ref.startswith("./")]
+        layer = Sdf.Layer.FindOrOpen(str(src))
+        refs = list(layer.GetCompositionAssetDependencies())
+    else:
+        return []
+    return [ref for ref in refs if _is_local_layer(ref)]
+
+
+def _is_local_layer(ref: str) -> bool:
+    """A layer next to this file. URIs and absolute paths are left alone."""
+    if not ref or "://" in ref:
+        return False
+    return not ref.startswith(("/", "\\")) and not (len(ref) > 2 and ref[1] == ":")
 
 
 def _copy_local_layers(src: Path, dest: Path) -> None:

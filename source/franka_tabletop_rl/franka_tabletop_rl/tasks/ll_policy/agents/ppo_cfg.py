@@ -9,7 +9,7 @@ from isaaclab.utils import configclass
 
 from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 
-from franka_tabletop_rl.paths import best_policy_path, log_dir
+from franka_tabletop_rl.paths import log_dir, project_root
 
 
 @configclass
@@ -49,6 +49,12 @@ class LLPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 @configclass
 class LLPPORunnerCfg_ENVHUB_PLAY(LLPPORunnerCfg):
-    """Play loads the published tracker checkpoint."""
+    """Play loads ``best_policy/best_policy.pt`` through the stock checkpoint resolver.
 
-    load_checkpoint = str(best_policy_path())
+    ``load_run`` and ``load_checkpoint`` are regular expressions. A Windows path contains
+    backslashes, so the published file is named here instead of passed as an absolute path.
+    """
+
+    experiment_name = str(project_root())
+    load_run = "best_policy$"
+    load_checkpoint = "best_policy[.]pt"

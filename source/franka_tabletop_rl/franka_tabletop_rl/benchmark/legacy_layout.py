@@ -5,14 +5,13 @@
 
 """Brain-format view of an RL bundle for parity tests and replay.
 
-``task-franka-tabletop`` reads ``scenes/<task_id>-<layout>.json``. Assets are linked, not copied.
+``task-franka-tabletop`` reads ``scenes/<task_id>-<layout>.json``. Assets are copied into the view.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
+import shutil
 from pathlib import Path
 
 import yaml
@@ -21,7 +20,7 @@ from .bundle import load_benchmark
 
 
 def legacy_bundle_view(bundle: str | Path, root: str | Path) -> Path:
-    """Write a brain-format bundle under ``root``. ``assets/`` links to the RL bundle.
+    """Write a brain-format bundle under ``root``. ``assets/`` is a copy of the RL bundle.
 
     Task files are copied with ``layout`` renamed to ``scene_id``.
     """
@@ -30,7 +29,7 @@ def legacy_bundle_view(bundle: str | Path, root: str | Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     assets = root / "assets"
     if not assets.exists():
-        _link_dir(bundle / "assets", assets)
+        shutil.copytree(bundle / "assets", assets)
     benchmark = load_benchmark(bundle)
     scenes = root / "scenes"
     scenes.mkdir(exist_ok=True)
@@ -51,10 +50,3 @@ def legacy_bundle_view(bundle: str | Path, root: str | Path) -> Path:
     text = yaml.safe_dump({"version": benchmark.version, "tasks": index}, sort_keys=False)
     (root / "benchmark.yaml").write_text(text, encoding="utf-8")
     return root
-
-
-def _link_dir(source: Path, dest: Path) -> None:
-    try:
-        os.symlink(source, dest, target_is_directory=True)
-    except OSError:
-        subprocess.check_call(["cmd", "/c", "mklink", "/J", str(dest), str(source)])
