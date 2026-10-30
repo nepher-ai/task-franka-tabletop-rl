@@ -97,6 +97,8 @@ Isaac Lab 3 has no `--headless` flag. `--viz none` runs without a window. Tensor
 
 One task is `env.task_id=<task_id>`. Another bundle is `env_id=franka-tabletop-rl-v1` after `nepher download franka-tabletop-rl-v1`. Playback runs until Ctrl+C. Highlight play exits after the clips are written.
 
+**Film shots.** `scripts/record_film.py scout <shot>` logs episodes without rendering, then `shoot <shot>` replays the stage and renders the chosen episode offscreen to `film/<shot>_<pass>.mp4` plus a JSON with the cut points. `preview` is a 960x540, 15 fps shoot. Shots: `hero`, `busy_table` (`--pass rgb` or `points`), `long_run`, `failure`, `success`, `closeup`, `parallel`. `parallel` needs no scout. Scout and shoot must use the same checkpoint.
+
 ## Key files
 
 | Path | Why |
@@ -120,6 +122,8 @@ One task is `env.task_id=<task_id>`. Another bundle is `env_id=franka-tabletop-r
 | `source/franka_tabletop_rl/franka_tabletop_rl/data/lerobot_writer.py` | LeRobot v2.1 writer |
 | `source/franka_tabletop_rl/franka_tabletop_rl/paths.py` | Checkpoint paths |
 | `scripts/record_lerobot.py` | Record successful episodes |
+| `scripts/record_film.py` | Scout and shoot the video shots: `list`, `scout`, `shoot`, `preview` |
+| `source/franka_tabletop_rl/franka_tabletop_rl/film/shots.py` | Shot catalog: cameras, cuts, stage |
 | `scripts/replay_check.py` | Replay one episode in task-franka-tabletop |
 
 ## External

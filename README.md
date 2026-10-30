@@ -102,6 +102,31 @@ Isaac Lab 3 does not have a `--headless` flag. `--viz none` runs without a windo
 ./isaaclab.sh play --task Nepher-FrankaTabletopRL-HL-Play-v0 --num_envs 64 --viz none env.highlight=on "env.highlight_tasks=0-15"
 ```
 
+### Film shots
+
+`scripts/record_film.py` records the shots of the Franka video offscreen, with no UI or gizmos, at 1920x1080 and 60 fps (the close-up is 3840x2160). It runs the tracker checkpoint from `best_policy/best_policy.pt` and writes `film/<shot>_<pass>.mp4` and a `<shot>_<pass>.json` next to it. The JSON holds the cut points, the planner events, and whether the replay matched the scout. Each take has 2 s before and 3 s after the part to use. `--fps` must divide the 120 Hz physics rate, and `--resolution 1920x1080` overrides the size. The 4x speed-up of the long run and any slow motion are applied when editing. `film/` is not committed.
+
+```bash
+./isaaclab.sh -p source/task-franka-tabletop-rl/scripts/record_film.py list
+./isaaclab.sh -p source/task-franka-tabletop-rl/scripts/record_film.py scout failure
+./isaaclab.sh -p source/task-franka-tabletop-rl/scripts/record_film.py preview failure
+./isaaclab.sh -p source/task-franka-tabletop-rl/scripts/record_film.py shoot failure
+```
+
+A take is made in two runs, except the parallel grid, which needs no scout. `scout` runs the stage without rendering and logs every episode to `film/scout/`. It stops at the first episode that can supply the shot, or when every env has finished `--episodes_per_env` episodes, and `--keep_scouting` goes on to that limit. Shots on the same stage share one scout log, so scout with `--keep_scouting` once to serve several of them. `shoot` runs the same stage again, renders the chosen episode, and checks that it played out as scouted. Scout and shoot need the same checkpoint, or `shoot` stops unless you pass `--force`. `--rank 1` takes the second-best episode, and `--env 3 --episode 1` takes that episode of that env. `preview` is `shoot` at 960x540 and 15 fps with PNG stills at the camera keys and cut points, written to `film/preview`.
+
+| # | Shot | Command | Take |
+| --- | --- | --- | --- |
+| 1 | Hero grasp | `scout hero`, then `shoot hero` | Low table-height camera, side-on, on `stack_yellow_on_red`, the carry comes toward the lens. 3 s before the first close, 4.5 s after |
+| 2 | Busy table | `scout busy_table`, then `shoot busy_table` | Slow high-and-wide push-in on `grab_a_bagel`, 5 s from the reset |
+| 3 | Point cloud | `shoot busy_table --pass points` | Same camera and take as shot 2, for the cross-fade. The planner's per-object surface points at the live object poses, with markers for the tool, the grasp and release poses, and the place goal |
+| 4 | Long run | `scout long_run`, then `shoot long_run` | One 15-40 s episode of a pack or stack task, fixed camera. Play it at 4x. The tracker needs 15 to 17 s at best on these tasks |
+| 5 | Failure and success | `scout failure`, `shoot failure`, `shoot success` | Same task and camera. The failure is a natural one found by the scout, never staged. 5 s each |
+| 6 | Gripper close-up | `scout closeup`, then `shoot closeup` | 3840x2160 camera that follows the tool, 2.5 s. `--fps 120 --resolution 1920x1080` gives slow motion |
+| 7 | Parallel grid | `shoot parallel` | All envs in one overhead view from the first step, 5 s |
+
+Shots 2 and 3 must use the same `--rank` or `--env` and `--episode`. Every mode except `list` needs a trained checkpoint. `scripts/film_framing.py <shot>` draws wireframe stills of a shot's camera to `film/framing` without Isaac Sim. Those are a schematic of the layout and not the render, so use `preview` to check the real framing.
+
 ### LeRobot dataset
 
 `scripts/record_lerobot.py` runs the planner and the tracker, and keeps the successful episodes as a LeRobot v2.1 dataset (`--cameras` records every camera as h264 video, and `--cameras cam_wrist cam_front` records those). It records all tasks at once, or one with `--task <task_id>`. `--episodes` is the number of successful episodes kept per task. `--num_envs` defaults to one env per task, and a larger value must be a multiple of the task count. It also copies the tracker it used to `best_policy/best_policy.pt`.

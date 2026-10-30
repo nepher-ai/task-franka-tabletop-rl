@@ -44,6 +44,7 @@ For a single-file context dump, load [llms-full.txt](https://raw.githubuserconte
 ## Scripts
 
 - [Record LeRobot dataset](https://raw.githubusercontent.com/nepher-ai/task-franka-tabletop-rl/main/scripts/record_lerobot.py): Successful planner episodes, optional camera video
+- [Record film shots](https://raw.githubusercontent.com/nepher-ai/task-franka-tabletop-rl/main/scripts/record_film.py): Scout and shoot the seven video shots offscreen at 1080p60, with a shot catalog in `film/shots.py`
 - [Replay check](https://raw.githubusercontent.com/nepher-ai/task-franka-tabletop-rl/main/scripts/replay_check.py): Replay one recorded episode in `task-franka-tabletop`
 
 ## Related projects
