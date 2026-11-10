@@ -160,6 +160,8 @@ def _pose(pos, size, quat=(1.0, 0.0, 0.0, 0.0), anchor=False):
         "quat": np.array([quat], dtype=np.float64),
         "geometry": from_box(size),
     }
+    # A pose starts at rest: its reset pose is the pose itself.
+    pose["initial_pos"], pose["initial_quat"] = pose["pos"], pose["quat"]
     if anchor:
         pose["anchor"] = True
     return pose
@@ -436,3 +438,112 @@ def test_retired_ops_and_flags_are_rejected():
     ):
         with pytest.raises(ValueError):
             _spec(block, ["cube", "bin"])
+
+
+def _turn(axis, angle):
+    quat = [np.cos(angle / 2.0), 0.0, 0.0, 0.0]
+    quat[1 + axis] = np.sin(angle / 2.0)
+    return tuple(quat)
+
+
+def _moved(pose, pos=None, quat=None):
+    """The pose now at ``pos`` and ``quat``, with the reset pose left where it was."""
+    moved = dict(pose)
+    if pos is not None:
+        moved["pos"] = np.array([pos], dtype=np.float64)
+    if quat is not None:
+        moved["quat"] = np.array([quat], dtype=np.float64)
+    return moved
+
+
+def _rebased(pose):
+    """The pose with its reset pose set to where it is now."""
+    return {**pose, "initial_pos": pose["pos"], "initial_quat": pose["quat"]}
+
+
+def test_a_reference_has_to_stay_near_its_reset_pose():
+    shelf = _pose((0.5, 0.0, 0.25), (0.25, 0.25, 0.5))
+    block = {"op": "on_top", "object": "cube", "reference": "shelf"}
+    carried = _contacts(force={("cube", "shelf"): np.array([0.0, 0.0, 1.0])})
+    cube = _pose((0.5, 0.0, 0.53125), CUBE)
+
+    def met(reference, rebase=False):
+        return _met(block, {"cube": cube, "shelf": _rebased(reference) if rebase else reference}, carried)
+
+    assert met(shelf)
+    # Within 0.05 m and 15 degrees, a settled shelf still counts.
+    assert met(_moved(shelf, pos=(0.546875, 0.0, 0.25), quat=_turn(0, np.radians(14.0))))
+    # Shoved past 0.05 m, or turned past 15 degrees, it does not. The geometry alone would pass.
+    shoved = _moved(shelf, pos=(0.5625, 0.0, 0.25))
+    assert not met(shoved) and met(shoved, rebase=True)
+    turned = _moved(shelf, quat=_turn(0, np.radians(16.0)))
+    assert not met(turned) and met(turned, rebase=True)
+    # A tipped shelf is the case in point: the mug rests on the fallen side.
+    tipped = _moved(shelf, quat=_turn(1, np.pi / 2.0))
+    assert not met(tipped) and met(tipped, rebase=True)
+
+
+def test_a_reference_without_a_reset_pose_fails_its_stage():
+    poses = {"cube": _pose((0.5, 0.0, 0.09375), CUBE), "bin": BIN}
+    assert _met(IN_BIN, poses)
+    bare = {key: value for key, value in BIN.items() if not key.startswith("initial")}
+    assert not _met(IN_BIN, {**poses, "bin": bare})
+
+
+def test_a_shoved_container_does_not_count_as_taking_an_object_out_of_it():
+    block = {"op": "outside_and_on_surface", "object": "cube", "container": "bin"}
+    carried = _contacts(force={("cube", "surface"): np.array([0.0, 0.0, 1.0])})
+    cube = _pose((0.5, 0.0, 0.03125), CUBE)
+    # The container slides away from the object, which sits on the table.
+    away = _moved(BIN, pos=(0.5, 0.5, 0.0625))
+    assert not _met(block, {"cube": cube, "bin": away}, carried)
+    assert _met(block, {"cube": cube, "bin": _rebased(away)}, carried)
+
+
+def test_objects_the_task_places_may_leave_their_reset_pose_but_the_base_may_not():
+    block = {
+        "op": "all",
+        "checks": [
+            {"op": "stacked", "object": "blue", "support": "red"},
+            {"op": "stacked", "object": "green", "support": "blue"},
+        ],
+    }
+    edge = (0.125,) * 3
+    touch = _contacts(touch={("blue", "red"): True, ("green", "blue"): True})
+    red = _pose((0.5, 0.0, 0.0625), edge)
+    # Blue and green came from elsewhere. Blue is the support of green and is placed by its own stage.
+    blue = _moved(_pose((0.9, 0.5, 0.0625), edge), pos=(0.5, 0.0, 0.1875))
+    green = _moved(_pose((0.9, -0.5, 0.0625), edge), pos=(0.5, 0.0, 0.3125))
+    assert _met(block, {"red": red, "blue": blue, "green": green}, touch)
+    # The base was shoved 0.0625 m, so the tower no longer counts.
+    shoved = _moved(red, pos=(0.5, 0.0625, 0.0625))
+    assert not _met(block, {"red": shoved, "blue": blue, "green": green}, touch)
+    assert _met(block, {"red": _rebased(shoved), "blue": blue, "green": green}, touch)
+
+
+def test_only_the_passing_branch_of_an_any_keeps_its_support_in_place():
+    block = {
+        "op": "any",
+        "checks": [
+            {"op": "stacked", "object": "upper", "support": "lower"},
+            {"op": "stacked", "object": "lower", "support": "upper"},
+        ],
+    }
+    edge = (0.125,) * 3
+    touch = _contacts(touch={("upper", "lower"): True})
+    upper = _moved(_pose((0.9, 0.5, 0.0625), edge), pos=(0.5, 0.0, 0.1875))
+    lower = _pose((0.5, 0.0, 0.0625), edge)
+    assert _met(block, {"upper": upper, "lower": lower}, touch)
+    # The mug that carries the other is not exempt just because the other branch places it.
+    assert not _met(block, {"upper": upper, "lower": _moved(lower, pos=(0.5, 0.0625, 0.0625))}, touch)
+
+
+def test_a_shoved_container_earns_no_progress():
+    from franka_tabletop_rl.benchmark.predicates import task_progress
+
+    spec = _spec(IN_BIN, ["cube", "bin"])
+    cube = _pose((0.5, 0.5, 0.09375), CUBE)
+    shoved = _moved(BIN, pos=(0.5, 0.5, 0.0625))
+    score, latched, _ = task_progress(spec, {"cube": cube, "bin": shoved}, _contacts(), {}, [])
+    assert score == 0.0 and latched == {}
+    assert task_progress(spec, {"cube": cube, "bin": _rebased(shoved)}, _contacts(), {}, [])[0] == 1.0

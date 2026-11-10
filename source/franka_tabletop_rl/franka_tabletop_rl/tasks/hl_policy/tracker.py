@@ -102,6 +102,8 @@ class TaskTracker:
         self.hold_s = np.zeros(self.num_envs, dtype=np.float64)
         self.success_hold_s = np.zeros(self.num_envs, dtype=np.float64)
         self.first_placed: list[dict[str, int]] = [{} for _ in range(self.num_envs)]
+        # Slot to the first pose [m] and wxyz quaternion read after reset. A guarded reference compares to it.
+        self.initial: list[dict[str, tuple[np.ndarray, np.ndarray]]] = [{} for _ in range(self.num_envs)]
         self.progress = np.zeros(self.num_envs, dtype=np.float64)
         self.lost = np.zeros(self.num_envs, dtype=bool)
         self.success_now = np.zeros(self.num_envs, dtype=bool)
@@ -199,6 +201,7 @@ class TaskTracker:
             self.hold_s[index] = 0.0
             self.success_hold_s[index] = 0.0
             self.first_placed[index] = {}
+            self.initial[index] = {}
             self.progress[index] = 0.0
             self.lost[index] = False
             self.success_now[index] = False
@@ -312,11 +315,17 @@ class TaskTracker:
     def _poses(self, index: int, layout: TaskLayout) -> dict:
         """Pose [m], wxyz quaternion, and geometry of every slot, plus the work surface.
 
-        An anchor slot is the work surface, so it shares its pose and geometry.
+        An anchor slot is the work surface, so it shares its pose and geometry. A body also carries its
+        reset pose, taken on the first read after reset. The planner's reads of ``slot_pose`` can still see
+        the roots of the last episode, so only this update path takes the snapshot.
         """
         poses = {geometry.SURFACE_SLOT: self._surface_pose(index)}
         for placement in layout.placements:
-            poses[placement.slot] = self._placement_pose(index, placement)
+            pose = self._placement_pose(index, placement)
+            if placement.asset.kind != "anchor":
+                start = self.initial[index].setdefault(placement.slot, (pose["pos"].copy(), pose["quat"].copy()))
+                pose = {**pose, "initial_pos": start[0], "initial_quat": start[1]}
+            poses[placement.slot] = pose
         return poses
 
     def slot_pose(self, index: int, slot: str) -> dict:

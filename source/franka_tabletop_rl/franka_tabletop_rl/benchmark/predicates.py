@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from .spec import Check, Goal, TabletopTaskSpec
-from .success import Contacts, goal_met
+from .success import Contacts, goal_met, placed_slots
 
 # Stages whose credit is taken back when the object returns to the container or leaves the support.
 _REVOCABLE = ("outside", "outside_and_on_surface")
@@ -54,22 +54,35 @@ def task_progress(
 
 
 def _score(
-    check: Check, poses: dict, contacts: Contacts, latched: dict[str, bool], entered: list[str], side: str
+    check: Check,
+    poses: dict,
+    contacts: Contacts,
+    latched: dict[str, bool],
+    entered: list[str],
+    side: str,
+    placed: frozenset[str] = frozenset(),
 ) -> float:
+    placed = placed_slots(check, poses, contacts, side, placed)
     if check.order:
-        return _order_score(check, poses, contacts, latched, entered, side)
+        return _order_score(check, poses, contacts, latched, entered, side, placed)
     if check.children:
-        values = [_score(child, poses, contacts, latched, entered, side) for child in check.children]
+        values = [_score(child, poses, contacts, latched, entered, side, placed) for child in check.children]
     else:
-        values = [_credit(goal, poses, contacts, latched, side) for goal in check.goals]
+        values = [_credit(goal, poses, contacts, latched, side, placed) for goal in check.goals]
     return _reduce(check.logical, values, check.k)
 
 
 def _order_score(
-    check: Check, poses: dict, contacts: Contacts, latched: dict[str, bool], entered: list[str], side: str
+    check: Check,
+    poses: dict,
+    contacts: Contacts,
+    latched: dict[str, bool],
+    entered: list[str],
+    side: str,
+    placed: frozenset[str],
 ) -> float:
     for goal in check.goals:
-        if goal.slot not in entered and goal_met(goal, poses, contacts, side):
+        if goal.slot not in entered and goal_met(goal, poses, contacts, side, placed):
             entered.append(goal.slot)
     matched: list[str] = []
     for slot in entered:
@@ -81,12 +94,14 @@ def _order_score(
             values.append(0.0)
             continue
         goal = next(item for item in check.goals if item.slot == slot)
-        values.append(_credit(goal, poses, contacts, latched, side))
+        values.append(_credit(goal, poses, contacts, latched, side, placed))
     return _reduce("all", values, 1)
 
 
-def _credit(goal: Goal, poses: dict, contacts: Contacts, latched: dict[str, bool], side: str) -> float:
-    met = goal_met(goal, poses, contacts, side)
+def _credit(
+    goal: Goal, poses: dict, contacts: Contacts, latched: dict[str, bool], side: str, placed: frozenset[str]
+) -> float:
+    met = goal_met(goal, poses, contacts, side, placed)
     if goal.op in _TRANSIENT:
         return 1.0 if met else 0.0
     key = latch_key(goal)

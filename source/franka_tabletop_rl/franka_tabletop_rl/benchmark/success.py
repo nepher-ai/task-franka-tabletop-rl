@@ -9,12 +9,16 @@ An episode succeeds when a stateless predicate holds on the current state. Conta
 hull center of the object against the open-top hull of the container. Support and stacking read the
 contact forces between the two bodies. The only history is the first-placement step that
 ``in_order`` compares. ``task_progress`` keeps the latched score that the planner reads.
+
+A stage that names a reference also needs that reference to sit near the pose it had at reset, so
+toppling or shoving a shelf, bin, or bowl cannot satisfy it. A reference that another passing stage of
+the same required branch places is exempt, since the task moves it.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -41,6 +45,9 @@ FOOTPRINT_TOL_M = 0.01
 # ``upright`` angle [rad] and ``centered`` distance [m] when the stage names none.
 UPRIGHT_TOL_RAD = 0.1
 CENTERED_TOL_M = 0.01
+# How far [m] and how much [rad] a reference may leave its reset pose.
+FIXTURE_MOVE_M = 0.05
+FIXTURE_TURN_RAD = math.radians(15.0)
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,7 @@ class _State:
     poses: dict
     contacts: Contacts
     side: str
+    placed: frozenset[str] = frozenset()
 
 
 def task_satisfied(
@@ -96,8 +104,10 @@ def task_satisfied(
     Args:
         spec: Task success expression.
         poses: Slot to ``pos`` [m] ``[1, 3]``, ``quat`` (wxyz) ``[1, 4]``, ``geometry``
-            (:class:`~.geometry.AssetGeometry`), and ``anchor`` (true for a slot without a body).
-            The work surface sits under :data:`SURFACE_SLOT`.
+            (:class:`~.geometry.AssetGeometry`), ``anchor`` (true for a slot without a body), and
+            ``initial_pos`` [m] ``[1, 3]`` and ``initial_quat`` (wxyz) ``[1, 4]`` of the reset pose.
+            A reference without the reset pose fails its stage. The work surface sits under
+            :data:`SURFACE_SLOT`.
         contacts: Finger and pair contact of the env.
         first_placed: Slot to the step it was first placed. Read by ``in_order``.
         side: Overrides the default side of ``on_side``.
@@ -143,12 +153,43 @@ def required_pairs(
     return tuple(pairs)
 
 
-def goal_met(goal: Goal, poses: dict[str, dict], contacts: Contacts, side: str) -> bool:
-    """Whether one stage holds now: its geometry, the contact it asks for, and the release it asks for."""
-    return _goal(goal, _State(poses, contacts, side))
+def goal_met(
+    goal: Goal,
+    poses: dict[str, dict],
+    contacts: Contacts,
+    side: str,
+    placed: frozenset[str] = frozenset(),
+) -> bool:
+    """Whether one stage holds now: its geometry, the contact it asks for, the release it asks for, and a
+    reference that has stayed near its reset pose unless ``placed`` names it."""
+    return _goal(goal, _State(poses, contacts, side, placed))
+
+
+def placed_slots(
+    check: Check,
+    poses: dict[str, dict],
+    contacts: Contacts,
+    side: str,
+    placed: frozenset[str] = frozenset(),
+) -> frozenset[str]:
+    """Slots that the required branch ``check`` moves into place, added to ``placed``.
+
+    Stages of an ``all`` or ordered node are required together, so the objects they pass are placed and
+    their own references may move. An ``any`` or ``choose`` node adds none, which leaves every
+    alternative with only the slots of the branches above it.
+    """
+    return _scoped(check, _State(poses, contacts, side, placed)).placed
+
+
+def _scoped(check: Check, state: _State) -> _State:
+    if check.logical != "all" and not check.order:
+        return state
+    slots = frozenset(goal.slot for goal in goals_of(check) if _goal(goal, state, guarded=False))
+    return replace(state, placed=state.placed | slots) if slots - state.placed else state
 
 
 def _note(check: Check, state: _State, first_placed: dict[str, int], step: int) -> None:
+    state = _scoped(check, state)
     if check.order:
         for goal in check.goals:
             if goal.slot not in first_placed and _goal(goal, state):
@@ -158,6 +199,7 @@ def _note(check: Check, state: _State, first_placed: dict[str, int], step: int) 
 
 
 def _check(check: Check, state: _State, first_placed: dict[str, int]) -> bool:
+    state = _scoped(check, state)
     if check.order:
         return _in_order(check, state, first_placed)
     if check.children:
@@ -185,13 +227,33 @@ def _in_order(check: Check, state: _State, first_placed: dict[str, int]) -> bool
     return all(step >= 0 for step in steps) and all(a <= b for a, b in zip(steps, steps[1:]))
 
 
-def _goal(goal: Goal, state: _State) -> bool:
+def _goal(goal: Goal, state: _State, guarded: bool = True) -> bool:
     if not _geometry(goal, state):
+        return False
+    if guarded and not _reference_held(goal, state):
         return False
     if any(not state.contacts.pair_touch(goal.slot, _body(state, partner)) for partner in goal.contact):
         return False
     # A slot without a finger reading counts as touched, so a missing sensor cannot pass.
     return not (goal.detach and state.contacts.touching.get(goal.slot, True))
+
+
+def _reference_held(goal: Goal, state: _State) -> bool:
+    """Whether the reference of ``goal`` is within the fixture limits of its reset pose.
+
+    A stage without a reference, an anchor, and a reference that ``state.placed`` names are exempt.
+    """
+    reference = state.poses.get(goal.target)
+    if reference is None or reference.get("anchor") or goal.target in state.placed:
+        return True
+    start_pos, start_quat = reference.get("initial_pos"), reference.get("initial_quat")
+    if start_pos is None or start_quat is None:
+        return False
+    if np.linalg.norm(_vec(reference["pos"]) - _vec(start_pos)) > FIXTURE_MOVE_M:
+        return False
+    now, then = _vec4(reference["quat"]), _vec4(start_quat)
+    cosine = abs(float(now @ then)) / (np.linalg.norm(now) * np.linalg.norm(then))
+    return 2.0 * math.acos(min(cosine, 1.0)) <= FIXTURE_TURN_RAD
 
 
 def _body(state: _State, slot: str) -> str:
@@ -239,6 +301,10 @@ def _geometry(goal: Goal, state: _State) -> bool:
 
 def _vec(value) -> np.ndarray:
     return np.asarray(value, dtype=np.float64).reshape(-1)[:3]
+
+
+def _vec4(value) -> np.ndarray:
+    return np.asarray(value, dtype=np.float64).reshape(-1)[:4]
 
 
 def _center(pose: dict) -> np.ndarray:
