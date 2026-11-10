@@ -99,33 +99,39 @@ def _box_corners(low: np.ndarray, high: np.ndarray) -> np.ndarray:
 def read_local_points(stage, prim_path: str) -> np.ndarray:
     """Mesh points [m] of a prim in its own rotated frame, at world scale.
 
-    Default-purpose meshes only, including instance proxies. Undoing the prim's rotation and
-    translation but not its scale keeps meters, whatever units the asset was authored in.
+    Default-purpose geometry only, including instance proxies. A mesh gives its points. An implicit
+    shape (cube, cylinder, sphere, ...) gives the corners of its extent, so a work surface built from
+    cubes keeps its real top. Undoing the prim's rotation and translation but not its scale keeps
+    meters, whatever units the asset was authored in.
 
     Raises:
-        ValueError: No prim or no mesh at ``prim_path``.
+        ValueError: No prim or no geometry at ``prim_path``.
     """
     from pxr import Gf, Usd, UsdGeom
 
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid():
         raise ValueError(f"no prim at {prim_path}")
-    cache = UsdGeom.XformCache(Usd.TimeCode.Default())
+    time = Usd.TimeCode.Default()
+    cache = UsdGeom.XformCache(time)
     to_local = cache.GetLocalToWorldTransform(prim).RemoveScaleShear().GetInverse()
     chunks = []
     for child in Usd.PrimRange(prim, Usd.TraverseInstanceProxies()):
-        if not child.IsA(UsdGeom.Mesh):
+        if not child.IsA(UsdGeom.Gprim):
             continue
-        mesh = UsdGeom.Mesh(child)
-        if mesh.GetPurposeAttr().Get() not in (None, UsdGeom.Tokens.default_):
+        if UsdGeom.Gprim(child).GetPurposeAttr().Get() not in (None, UsdGeom.Tokens.default_):
             continue
-        points = mesh.GetPointsAttr().Get()
+        if child.IsA(UsdGeom.Mesh):
+            points = UsdGeom.Mesh(child).GetPointsAttr().Get()
+        else:
+            extent = UsdGeom.Boundable.ComputeExtentFromPlugins(UsdGeom.Boundable(child), time)
+            points = None if extent is None else [Gf.Vec3f(*corner) for corner in _box_corners(*np.asarray(extent))]
         if points is None or len(points) == 0:
             continue
         to_world = cache.GetLocalToWorldTransform(child)
         chunks.append([list(to_local.Transform(Gf.Vec3d(to_world.Transform(point)))) for point in points])
     if not chunks:
-        raise ValueError(f"no mesh under {prim_path}")
+        raise ValueError(f"no geometry under {prim_path}")
     return np.concatenate([np.asarray(chunk, dtype=np.float64) for chunk in chunks])
 
 

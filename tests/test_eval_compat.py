@@ -343,6 +343,63 @@ def test_picked_up_needs_a_finger_and_the_lowest_corner_above_the_work_surface()
     assert not met(0.3125, grabbed=False)
 
 
+def test_a_touched_object_resting_on_a_published_table_is_not_picked_up():
+    """The oak and maple tables are cubes and cylinders, not meshes. Their top must still be read."""
+    import json
+
+    import pytest
+
+    pytest.importorskip("pxr")
+    from franka_tabletop_rl.benchmark.geometry import SURFACE_SLOT, from_points, read_local_points
+
+    from pxr import Gf, Usd, UsdGeom
+
+    bundle = Path(__file__).resolve().parents[2] / "envhub" / "environments" / "franka-tabletop-rl-v0"
+    if not bundle.is_dir():
+        pytest.skip("envhub bundle is not next to this package")
+    block = {"op": "picked_up", "object": "cube", "distance": 0.05}
+    for record in json.loads((bundle / "assets" / "stage.json").read_text(encoding="utf-8"))["surfaces"]:
+        stage = Usd.Stage.CreateInMemory()
+        table = stage.DefinePrim("/table", "Xform")
+        table.GetReferences().AddReference(str(bundle / record["usd"]))
+        UsdGeom.Xformable(table).AddTranslateOp().Set(Gf.Vec3d(*record["pos"]))
+        surface = _pose(record["pos"], (1.0, 1.0, 1.0), record["rot"], anchor=True)
+        surface["geometry"] = from_points(read_local_points(stage, "/table"))
+        top = float(record["table_z_m"])
+
+        def met(z):
+            poses = {"cube": _pose((record["pos"][0], 0.0, z), CUBE), SURFACE_SLOT: surface}
+            return _met(block, poses, _contacts(touching={"cube": True}), names=["cube"])
+
+        assert not met(top + CUBE[2] / 2.0), record["name"]
+        assert met(top + CUBE[2] / 2.0 + 0.0625), record["name"]
+
+
+def test_a_work_surface_without_geometry_is_refused_not_guessed(monkeypatch):
+    """A guessed table box puts the top in the wrong place, so a touch would pass ``picked_up``."""
+    import pytest
+
+    pytest.importorskip("isaaclab")
+    pytest.importorskip("pxr")
+    from franka_tabletop_rl.tasks.hl_policy import tracker as tracker_module
+
+    from pxr import Usd, UsdGeom
+
+    stage = Usd.Stage.CreateInMemory()
+    stage.DefinePrim("/World/envs/env_0/table", "Xform")
+    monkeypatch.setattr(tracker_module, "_usd_stage", lambda: stage)
+    tracker = tracker_module.TaskTracker.__new__(tracker_module.TaskTracker)
+    tracker.num_envs = 1
+    tracker.plan = SimpleNamespace(surface_choices=[[0]])
+    tracker._surface_geometry = {}
+    with pytest.raises(ValueError, match="no geometry to judge success against"):
+        tracker._surface(0)
+
+    UsdGeom.Cube.Define(stage, "/World/envs/env_0/table/top").GetSizeAttr().Set(0.5)
+    corners = tracker._surface(0).box_corners
+    np.testing.assert_allclose(corners.max(axis=0), (0.25, 0.25, 0.25))
+
+
 def test_centered_is_per_axis_and_defaults_to_one_centimetre():
     table = _pose((0.5, 0.0, -0.0625), (1.0, 1.0, 0.125), anchor=True)
     block = {"op": "centered", "object": "mug", "reference": "table"}

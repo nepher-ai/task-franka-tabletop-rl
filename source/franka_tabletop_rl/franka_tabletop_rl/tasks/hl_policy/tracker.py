@@ -19,9 +19,7 @@ import torch
 from scipy.spatial import QhullError
 
 from franka_tabletop_rl.benchmark import geometry
-from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
 from franka_tabletop_rl.benchmark.predicates import task_progress
-from franka_tabletop_rl.benchmark.stage import resolve_surface
 from franka_tabletop_rl.benchmark.stage_plan import SURFACE_ENTITY, StagePlan, entity_pose, surface_body_pose
 from franka_tabletop_rl.benchmark.success import (
     CONTACT_FORCE_N,
@@ -396,7 +394,9 @@ class TaskTracker:
     def _surface(self, index: int) -> geometry.AssetGeometry:
         """Geometry of the work surface env ``index`` spawned. Built once per surface mesh.
 
-        A table payload with no default-purpose mesh uses the anchor box, or the stage ``table_m``.
+        Raises:
+            ValueError: The table payload has no default-purpose geometry with volume. Its height is then
+                unknown, so ``picked_up`` and every other check against the surface could not be trusted.
         """
         choice = self.plan.surface_choices[0][index]
         if choice not in self._surface_geometry:
@@ -405,24 +405,9 @@ class TaskTracker:
             try:
                 points = geometry.read_local_points(_usd_stage(), path)
                 self._surface_geometry[choice] = geometry.from_points(points)
-            except (ValueError, QhullError):
-                size = self._surface_size(sample)
-                if size is None:
-                    raise
-                self._surface_geometry[choice] = geometry.from_box(size, warn=f"table ({path})")
+            except (ValueError, QhullError) as error:
+                raise ValueError(f"work surface {path} has no geometry to judge success against: {error}") from error
         return self._surface_geometry[choice]
-
-    def _surface_size(self, index: int) -> tuple[float, float, float] | None:
-        """Authored table box [m] of env ``index``. An anchor placement wins, then the stage record."""
-        for placement in self.env_layouts[index].placements:
-            if placement.asset.kind == "anchor":
-                return placement.asset.size_m
-        stage = load_benchmark(resolve_bundle(self.env.cfg.env_id)).stage
-        record = resolve_surface(stage, self.env_layouts[index].surface)
-        size = record.get("table_m")
-        if isinstance(size, (list, tuple)) and len(size) == 3:
-            return tuple(float(value) for value in size)
-        return None
 
     def origin(self, index: int) -> np.ndarray:
         """Env origin [m] in the simulation frame."""
