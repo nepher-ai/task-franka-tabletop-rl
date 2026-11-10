@@ -11,7 +11,6 @@ import torch
 
 import isaaclab.sim as sim_utils
 
-from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
 from franka_tabletop_rl.benchmark.stage import xyzw_from_wxyz
 from franka_tabletop_rl.benchmark.stage_plan import entity_pose, surface_body_pose
 from franka_tabletop_rl.scene.robot import ARM_JOINTS
@@ -53,15 +52,15 @@ def reset_arm_start_noise(env: ManagerBasedRLEnv, env_ids: torch.Tensor | slice)
 
 
 def place_planned_layout(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:
-    """Spawn every env's bodies at that env's own layout, before physics starts.
+    """Spawn every env's bodies at that env's first-episode layout, before physics starts.
 
     A body is created once for all envs, at the pose of the first task that uses it. Without this the
     warm-up step and the kinematic setup see the wrong layout, and the first reset then teleports the
-    kinematic table and shelves under the objects of the other envs.
+    kinematic table and shelves under the objects of the other envs. The layout includes the shared jitter
+    shift, and the tracker starts the first episode in it, so no object moves after physics has run.
     """
     plan = env.cfg.stage_plan
-    benchmark = load_benchmark(resolve_bundle(env.cfg.env_id))
-    env_layouts = [benchmark.task(plan.task_ids[task]) for task in plan.assignment[0]]
+    env_layouts = [env.layout_sampler.first(index) for index in range(plan.num_envs)]
     stage = env.sim.stage
     for index in range(plan.num_envs):
         root = f"{env.scene.env_ns}/env_{index}"

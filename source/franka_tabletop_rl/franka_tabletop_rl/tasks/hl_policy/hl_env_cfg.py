@@ -73,6 +73,11 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
     env_id: str = DEFAULT_ENV_ID
     task_id: str = ALL_TASKS
     pose_jitter_m: float = 0.0
+    """Half-range [m] used for both axes when ``jitter_x`` or ``jitter_y`` is omitted."""
+    jitter_x: float | None = None
+    """Half-range [m] of the shared x shift. ``None`` uses ``pose_jitter_m``."""
+    jitter_y: float | None = None
+    """Half-range [m] of the shared y shift. ``None`` uses ``pose_jitter_m``."""
     arm_start_noise_rad: float = 0.05
     """Half range [rad] of the uniform offset on each arm joint at reset. Zero keeps the ready pose."""
     cameras: tuple[str, ...] = ()
@@ -107,6 +112,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command.task_ids = self.task_ids
         command.body_name = EE_BODY
         command.pose_jitter_m = self.pose_jitter_m
+        command.jitter_x = self.jitter_x
+        command.jitter_y = self.jitter_y
         command.layout_seed = self.layout_seed
 
     def sync_task_selection(self) -> None:
@@ -126,6 +133,8 @@ class HLEnvCfg(ManagerBasedRLEnvCfg):
         command.task_ids = selected
         command.env_id = self.env_id
         command.pose_jitter_m = self.pose_jitter_m
+        command.jitter_x = self.jitter_x
+        command.jitter_y = self.jitter_y
         command.layout_seed = self.layout_seed
 
     def play_mode(self):

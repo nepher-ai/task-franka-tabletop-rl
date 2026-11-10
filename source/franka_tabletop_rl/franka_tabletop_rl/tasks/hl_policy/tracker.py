@@ -12,13 +12,16 @@ state, judged as the reference benchmark judges it, and then it has to keep hold
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from scipy.spatial import QhullError
 
 from franka_tabletop_rl.benchmark import geometry
+from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
 from franka_tabletop_rl.benchmark.predicates import task_progress
+from franka_tabletop_rl.benchmark.stage import resolve_surface
 from franka_tabletop_rl.benchmark.stage_plan import SURFACE_ENTITY, StagePlan, entity_pose, surface_body_pose
 from franka_tabletop_rl.benchmark.success import (
     CONTACT_FORCE_N,
@@ -27,8 +30,11 @@ from franka_tabletop_rl.benchmark.success import (
     required_pairs,
     task_satisfied,
 )
-from franka_tabletop_rl.benchmark.task import TaskLayout, with_jitter, world_position
+from franka_tabletop_rl.benchmark.task import TaskLayout, world_position
 from franka_tabletop_rl.scene.contact import contact_partners, fingers_touching, pair_forces
+
+if TYPE_CHECKING:
+    from .layout_sampler import LayoutSampler
 
 # A finished pose has to hold this long before the episode ends.
 SUCCESS_HOLD_S = 0.5
@@ -72,9 +78,12 @@ def _host(values) -> np.ndarray:
 
 
 class TaskTracker:
-    """Scene layout, benchmark scoring, and latched outcomes. ``pose_jitter_m`` is a table-plane shift [m]."""
+    """Scene layout, benchmark scoring, and latched outcomes.
 
-    def __init__(self, env, layouts: Sequence[TaskLayout], plan: StagePlan, pose_jitter_m: float = 0.0, seed: int = 1):
+    ``sampler`` draws each episode's layout. An env's first episode starts in the layout it spawned with.
+    """
+
+    def __init__(self, env, layouts: Sequence[TaskLayout], plan: StagePlan, sampler: LayoutSampler):
         self.env = env
         self.plan = plan
         self.task_ids = tuple(plan.task_ids)
@@ -88,10 +97,10 @@ class TaskTracker:
         self.phase = 0
         self.task_index = np.array(plan.assignment[0], dtype=int)
         self.entities = plan.entities
-        self.pose_jitter_m = float(pose_jitter_m)
+        self.sampler = sampler
         self.device = env.device
-        self._seed = int(seed)
         self._episodes = 0
+        self._started = np.zeros(self.num_envs, dtype=bool)
         self._active = False
         self.required = tuple(self._required_slots(index) for index in range(len(self.task_ids)))
         self.pairs = tuple(self._task_pairs(layout) for layout in self.task_layouts)
@@ -193,9 +202,13 @@ class TaskTracker:
         self._active = True
         for index in ids:
             self._episodes += 1
-            episode_seed = int(seed if seed is not None else self._seed + self._episodes)
-            published = self.task_layouts[int(self.task_index[index])]
-            self.env_layouts[index] = with_jitter(published, episode_seed, self.pose_jitter_m)
+            if seed is not None:
+                self.env_layouts[index] = self.sampler.episode(index, int(seed))
+            elif not self._started[index]:
+                self.env_layouts[index] = self.sampler.first(index)
+            else:
+                self.env_layouts[index] = self.sampler.episode(index, self.sampler.seed_of(self._episodes))
+            self._started[index] = True
             self.latched[index] = {}
             self.entered[index] = []
             self.hold_s[index] = 0.0
@@ -381,13 +394,35 @@ class TaskTracker:
         return self._geometry[key]
 
     def _surface(self, index: int) -> geometry.AssetGeometry:
-        """Geometry of the work surface env ``index`` spawned. Built once per surface mesh."""
+        """Geometry of the work surface env ``index`` spawned. Built once per surface mesh.
+
+        A table payload with no default-purpose mesh uses the anchor box, or the stage ``table_m``.
+        """
         choice = self.plan.surface_choices[0][index]
         if choice not in self._surface_geometry:
             sample = next(env for env in range(self.num_envs) if self.plan.surface_choices[0][env] == choice)
-            points = geometry.read_local_points(_usd_stage(), f"/World/envs/env_{sample}/table")
-            self._surface_geometry[choice] = geometry.from_points(points)
+            path = f"/World/envs/env_{sample}/table"
+            try:
+                points = geometry.read_local_points(_usd_stage(), path)
+                self._surface_geometry[choice] = geometry.from_points(points)
+            except (ValueError, QhullError):
+                size = self._surface_size(sample)
+                if size is None:
+                    raise
+                self._surface_geometry[choice] = geometry.from_box(size, warn=f"table ({path})")
         return self._surface_geometry[choice]
+
+    def _surface_size(self, index: int) -> tuple[float, float, float] | None:
+        """Authored table box [m] of env ``index``. An anchor placement wins, then the stage record."""
+        for placement in self.env_layouts[index].placements:
+            if placement.asset.kind == "anchor":
+                return placement.asset.size_m
+        stage = load_benchmark(resolve_bundle(self.env.cfg.env_id)).stage
+        record = resolve_surface(stage, self.env_layouts[index].surface)
+        size = record.get("table_m")
+        if isinstance(size, (list, tuple)) and len(size) == 3:
+            return tuple(float(value) for value in size)
+        return None
 
     def origin(self, index: int) -> np.ndarray:
         """Env origin [m] in the simulation frame."""

@@ -5,7 +5,7 @@
 [project]
 name = "task-franka-tabletop-rl"
 version = "0.1.0"
-description = "Hierarchical Franka tabletop pick-and-place (planner, low-level policy, IK) and LeRobot data collection."
+description = "Hierarchical Franka tabletop pick-and-place (planner, low-level policy, IK)."
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

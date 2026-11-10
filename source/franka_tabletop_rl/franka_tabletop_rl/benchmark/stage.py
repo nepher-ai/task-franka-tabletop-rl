@@ -58,6 +58,16 @@ def surface_pose(stage_surface: dict, scene: dict) -> tuple[tuple[float, ...], t
     return pos, rot
 
 
+def table_rect(stage_surface: dict, scene_pose: dict | None) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Work-surface center and half sizes [m] along x and y. A task ``surface_pose`` sets the center."""
+    half = tuple(float(value) / 2.0 for value in (stage_surface.get("table_m") or (0.7, 1.0, 0.04))[:2])
+    if isinstance(scene_pose, dict) and scene_pose.get("pos"):
+        center = scene_pose["pos"]
+    else:
+        center = stage_surface.get("center_xy") or tuple(stage_surface.get("pos", (0.547, 0.0)))[:2]
+    return (float(center[0]), float(center[1])), half
+
+
 def resolve_surface(stage: dict, name: str | None = None) -> dict:
     """One work-surface record. ``name`` overrides the stage default."""
     return _select(stage["surfaces"], name if name is not None else stage.get("surface"), "surface")

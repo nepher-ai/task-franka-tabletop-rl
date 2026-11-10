@@ -19,7 +19,7 @@ import numpy as np
 
 from franka_tabletop_rl.benchmark.predicates import latch_key
 from franka_tabletop_rl.benchmark.spec import Goal
-from franka_tabletop_rl.benchmark.stage import resolve_surface
+from franka_tabletop_rl.benchmark.stage import resolve_surface, table_rect
 from franka_tabletop_rl.frames import MIN_REACH_X_M, REACH_HIGH_M, REACH_LOW_M, REACH_Z_HIGH_M, REACH_Z_LOW_M
 
 from ..tracker import TaskTracker
@@ -65,14 +65,8 @@ def table_box(stage: dict | None, layout) -> tuple[np.ndarray, np.ndarray]:
     record = resolve_surface(stage, layout.surface)
     half = np.asarray(record.get("table_m") or (0.7, 1.0, 0.04), dtype=np.float64) / 2.0
     table_z = float(record.get("table_z_m", 0.0))
-    pose = layout.surface_pose if isinstance(getattr(layout, "surface_pose", None), dict) else None
-    if pose and pose.get("pos"):
-        pos = pose["pos"]
-        center = np.array([float(pos[0]), float(pos[1]), table_z])
-    else:
-        raw = record.get("center_xy") or tuple(record.get("pos", (0.547, 0.0)))[:2]
-        center = np.array([float(raw[0]), float(raw[1]), table_z])
-    return center, half
+    (center_x, center_y), _ = table_rect(record, getattr(layout, "surface_pose", None))
+    return np.array([center_x, center_y, table_z]), half
 
 
 class Stage(IntEnum):
