@@ -42,7 +42,7 @@ def _source(root: Path, tasks: list[tuple[str, str, str]]) -> None:
                     "position_m": [0.5, 0.0, 0.02],
                 }
             ],
-            "success": {"op": "picked", "object": "cube"},
+            "success": {"op": "picked_up", "object": "cube"},
         }
         (root / "scenes" / f"{task_id}-{layout}.json").write_text(json.dumps(payload), encoding="utf-8")
         entries.append({"task_id": task_id, "scene": layout, "background": background})

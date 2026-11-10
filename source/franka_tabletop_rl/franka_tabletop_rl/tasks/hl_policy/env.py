@@ -12,6 +12,7 @@ from isaaclab.envs import ManagerBasedRLEnv
 from franka_tabletop_rl.benchmark.bundle import load_benchmark, resolve_bundle
 from franka_tabletop_rl.benchmark.stage_plan import plan_stage
 from franka_tabletop_rl.scene.clone import planned_worlds
+from franka_tabletop_rl.scene.contact import contact_partners
 from franka_tabletop_rl.scene.scene_cfg import mount_stage
 
 
@@ -31,7 +32,7 @@ class HLTabletopEnv(ManagerBasedRLEnv):
         layouts = [benchmark.task(task_id) for task_id in cfg.task_ids]
         plan = plan_stage(layouts, benchmark.stage, int(cfg.scene.num_envs))
         cfg.scene.env_spacing = plan.env_spacing
-        mount_stage(cfg, bundle, benchmark.stage, plan)
+        mount_stage(cfg, bundle, benchmark.stage, plan, contact_partners(plan, layouts))
         cfg.stage_plan = plan
         # Arm start noise follows the latest reset seed and the count of full-env resets (-1 before the first).
         # An auto-reset keeps the current round.

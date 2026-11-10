@@ -6,7 +6,7 @@
 """Per-env task state. Env ``i`` runs task ``i % T`` and resets on its own.
 
 Progress uses the latched benchmark predicates. The success expression has to hold on the current
-state, and then it has to keep holding for :data:`SUCCESS_HOLD_S`.
+state, judged as the reference benchmark judges it, and then it has to keep holding for :data:`SUCCESS_HOLD_S`.
 """
 
 from __future__ import annotations
@@ -15,13 +15,20 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
+from scipy.spatial import QhullError
 
+from franka_tabletop_rl.benchmark import geometry
 from franka_tabletop_rl.benchmark.predicates import task_progress
-from franka_tabletop_rl.benchmark.stage_plan import StagePlan, entity_pose, surface_body_pose
-from franka_tabletop_rl.benchmark.success import note_placements, task_satisfied
+from franka_tabletop_rl.benchmark.stage_plan import SURFACE_ENTITY, StagePlan, entity_pose, surface_body_pose
+from franka_tabletop_rl.benchmark.success import (
+    CONTACT_FORCE_N,
+    Contacts,
+    note_placements,
+    required_pairs,
+    task_satisfied,
+)
 from franka_tabletop_rl.benchmark.task import TaskLayout, with_jitter, world_position
-from franka_tabletop_rl.scene.contact import slots_in_contact
-from franka_tabletop_rl.scene.robot import GRIPPER_CLOSED_RAD
+from franka_tabletop_rl.scene.contact import contact_partners, fingers_touching, pair_forces
 
 # A finished pose has to hold this long before the episode ends.
 SUCCESS_HOLD_S = 0.5
@@ -53,6 +60,12 @@ def _commit_hold(
     return latched, entered, 0.0, False
 
 
+def _usd_stage():
+    import omni.usd
+
+    return omni.usd.get_context().get_stage()
+
+
 def _host(values) -> np.ndarray:
     values = values.torch if hasattr(values, "torch") else values
     return values.detach().cpu().numpy()
@@ -81,8 +94,9 @@ class TaskTracker:
         self._episodes = 0
         self._active = False
         self.required = tuple(self._required_slots(index) for index in range(len(self.task_ids)))
+        self.pairs = tuple(self._task_pairs(layout) for layout in self.task_layouts)
+        self.partners = contact_partners(plan, self.task_layouts)
         self.env_layouts: list[TaskLayout] = [self.task_layouts[int(task)] for task in self.task_index]
-        self.held = {entity: np.zeros(self.num_envs, dtype=bool) for entity in self.entities}
         self.latched: list[dict[str, bool]] = [{} for _ in range(self.num_envs)]
         self.entered: list[list[str]] = [[] for _ in range(self.num_envs)]
         self.hold_s = np.zeros(self.num_envs, dtype=np.float64)
@@ -100,10 +114,18 @@ class TaskTracker:
         self.failed = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.roots: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self.contact: dict[str, np.ndarray] = {}
-        self.gripper_open = np.ones(self.num_envs, dtype=bool)
+        self.forces: dict[tuple[str, str], np.ndarray] = {}
+        self._geometry: dict[tuple[str, int], geometry.AssetGeometry] = {}
+        self._surface_geometry: dict[int, geometry.AssetGeometry] = {}
         self._origins = _host(env.scene.env_origins).reshape(-1, 3)
         self._updated_at = -1
-        self._finger = int(env.scene["robot"].find_joints("finger_joint")[0][0])
+
+    @staticmethod
+    def _task_pairs(layout: TaskLayout) -> tuple[tuple[str, str], ...]:
+        if layout.spec is None:
+            return ()
+        anchors = {item.slot for item in layout.placements if item.asset.kind == "anchor"}
+        return required_pairs(layout.spec, anchors)
 
     def _required_slots(self, task: int) -> tuple[str, ...]:
         names: list[str] = []
@@ -174,8 +196,6 @@ class TaskTracker:
             self.env_layouts[index] = with_jitter(published, episode_seed, self.pose_jitter_m)
             self.latched[index] = {}
             self.entered[index] = []
-            for held in self.held.values():
-                held[index] = False
             self.hold_s[index] = 0.0
             self.success_hold_s[index] = 0.0
             self.first_placed[index] = {}
@@ -233,30 +253,20 @@ class TaskTracker:
             return
         self._updated_at = step
         self.read_roots()
-        self.contact = slots_in_contact(self.env.scene, self.num_envs, self.entities)
-        for entity in self.entities:
-            self.held[entity] |= self.contact[entity]
-        finger = _host(self.env.scene["robot"].data.joint_pos)[:, self._finger]
-        self.gripper_open = (finger / GRIPPER_CLOSED_RAD) < 0.5
+        self.contact = fingers_touching(self.env.scene, self.num_envs, self.entities)
+        self.forces = pair_forces(self.env.scene, self.num_envs, self.partners)
         dt = float(self.env.step_dt)
         for index, layout in enumerate(self.env_layouts):
             task = int(self.task_index[index])
             names = self.plan.phase_slots[self.phase][index]
-            held = {slot: bool(self.held[entity][index]) for slot, entity in names.items()}
             touching = {slot: bool(self.contact[entity][index]) for slot, entity in names.items()}
             spec = self.specs[task]
             if spec is None:
                 continue
             poses = self._poses(index, layout)
+            contacts = self._contacts(index, task, touching)
             score, latched, entered = task_progress(
-                spec,
-                poses,
-                held,
-                touching,
-                self.latched[index],
-                self.entered[index],
-                side=layout.side,
-                gripper_open=bool(self.gripper_open[index]),
+                spec, poses, contacts, self.latched[index], self.entered[index], side=layout.side
             )
             self.progress[index] = score
             committed, order, hold, _ = _commit_hold(
@@ -272,8 +282,8 @@ class TaskTracker:
             self.entered[index] = order
             self.hold_s[index] = hold
             step_index = int(self.env.episode_length_buf[index])
-            note_placements(spec, poses, touching, self.first_placed[index], step_index, side=layout.side)
-            satisfied = task_satisfied(spec, poses, touching, self.first_placed[index], side=layout.side)
+            note_placements(spec, poses, contacts, self.first_placed[index], step_index, side=layout.side)
+            satisfied = task_satisfied(spec, poses, contacts, self.first_placed[index], side=layout.side)
             self.success_hold_s[index] = self.success_hold_s[index] + dt if satisfied else 0.0
             self.success_now[index] = bool(self.success_hold_s[index] >= SUCCESS_HOLD_S)
             self.lost[index] = any(self.is_lost(self.root(index, slot)[0]) for slot in self.required[task])
@@ -285,23 +295,90 @@ class TaskTracker:
     def is_lost(pos: np.ndarray) -> bool:
         return bool(pos[2] < LOST_Z_M or np.linalg.norm(pos[:2]) > LOST_RADIUS_M)
 
+    def _contacts(self, index: int, task: int, touching: dict[str, bool]) -> Contacts:
+        """Finger contact and the pair forces [N] that task ``task`` reads, in env ``index``."""
+        names = self.plan.phase_slots[self.phase][index]
+        touch: dict[tuple[str, str], bool] = {}
+        force: dict[tuple[str, str], np.ndarray] = {}
+        for item, partner in self.pairs[task]:
+            other = SURFACE_ENTITY if partner == geometry.SURFACE_SLOT else names.get(partner)
+            found = self.forces.get((names.get(item), other))
+            if found is None:
+                continue
+            force[(item, partner)] = found[index]
+            touch[(item, partner)] = bool(np.any(np.abs(found[index]) > CONTACT_FORCE_N))
+        return Contacts(touching=touching, touch=touch, force=force)
+
     def _poses(self, index: int, layout: TaskLayout) -> dict:
-        poses = {}
+        """Pose [m], wxyz quaternion, and geometry of every slot, plus the work surface.
+
+        An anchor slot is the work surface, so it shares its pose and geometry.
+        """
+        poses = {geometry.SURFACE_SLOT: self._surface_pose(index)}
         for placement in layout.placements:
-            if placement.asset.kind == "anchor":
-                pos = np.asarray(placement.position_m, dtype=np.float64)
-                quat = np.asarray(placement.quat_wxyz, dtype=np.float64)
-            else:
-                root_pos, root_quat = self.root(index, placement.slot)
-                pos = root_pos.astype(np.float64)
-                x, y, z, w = root_quat.astype(np.float64)
-                quat = np.array([w, x, y, z])
-            poses[placement.slot] = {
-                "pos": pos.reshape(1, 3),
-                "quat": quat.reshape(1, 4),
-                "half": np.array(placement.asset.size_m, dtype=np.float64) * 0.5,
-            }
+            poses[placement.slot] = self._placement_pose(index, placement)
         return poses
+
+    def slot_pose(self, index: int, slot: str) -> dict:
+        """Pose [m] ``[1, 3]``, wxyz quaternion ``[1, 4]``, and geometry of ``slot`` in env ``index``.
+
+        An anchor slot, and :data:`~franka_tabletop_rl.benchmark.geometry.SURFACE_SLOT`, is the work surface.
+        """
+        if slot == geometry.SURFACE_SLOT:
+            return self._surface_pose(index)
+        return self._placement_pose(index, self.env_layouts[index].by_slot()[slot])
+
+    def slot_geometry(self, index: int, slot: str) -> geometry.AssetGeometry:
+        """Geometry of ``slot`` in env ``index``. Needs no pose, so it can be read before the first step."""
+        placement = self.env_layouts[index].by_slot()[slot]
+        if placement.asset.kind == "anchor":
+            return self._surface(index)
+        return self._body_geometry(index, placement)
+
+    def _surface_pose(self, index: int) -> dict:
+        pos, quat = surface_body_pose(self.plan, index, 0, self.phase)
+        return {
+            "pos": np.asarray(pos, dtype=np.float64).reshape(1, 3),
+            "quat": np.asarray(quat, dtype=np.float64).reshape(1, 4),
+            "geometry": self._surface(index),
+            "anchor": True,
+        }
+
+    def _placement_pose(self, index: int, placement) -> dict:
+        if placement.asset.kind == "anchor":
+            return self._surface_pose(index)
+        root_pos, root_quat = self.root(index, placement.slot)
+        x, y, z, w = root_quat.astype(np.float64)
+        return {
+            "pos": root_pos.astype(np.float64).reshape(1, 3),
+            "quat": np.array([[w, x, y, z]]),
+            "geometry": self._body_geometry(index, placement),
+        }
+
+    def _body_geometry(self, index: int, placement) -> geometry.AssetGeometry:
+        """Geometry of the mesh that env ``index`` spawned for ``placement``. Built once per mesh."""
+        entity = self.entity(index, placement.slot)
+        position = self.entities.index(entity)
+        choice = self.plan.choices[position][index]
+        key = (entity, choice)
+        if key not in self._geometry:
+            sample = next(env for env in range(self.num_envs) if self.plan.choices[position][env] == choice)
+            path = f"/World/envs/env_{sample}/{entity}"
+            try:
+                points = geometry.read_local_points(_usd_stage(), path)
+                self._geometry[key] = geometry.from_points(points)
+            except (ValueError, QhullError):  # no mesh, or a mesh without volume
+                self._geometry[key] = geometry.from_box(placement.asset.size_m, warn=f"{placement.asset.name} ({path})")
+        return self._geometry[key]
+
+    def _surface(self, index: int) -> geometry.AssetGeometry:
+        """Geometry of the work surface env ``index`` spawned. Built once per surface mesh."""
+        choice = self.plan.surface_choices[0][index]
+        if choice not in self._surface_geometry:
+            sample = next(env for env in range(self.num_envs) if self.plan.surface_choices[0][env] == choice)
+            points = geometry.read_local_points(_usd_stage(), f"/World/envs/env_{sample}/table")
+            self._surface_geometry[choice] = geometry.from_points(points)
+        return self._surface_geometry[choice]
 
     def origin(self, index: int) -> np.ndarray:
         """Env origin [m] in the simulation frame."""

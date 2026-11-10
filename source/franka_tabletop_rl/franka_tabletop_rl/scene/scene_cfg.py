@@ -26,12 +26,14 @@ from franka_tabletop_rl.benchmark.stage import (
     xyzw_from_wxyz,
 )
 from franka_tabletop_rl.benchmark.stage_plan import SURFACE_ENTITY, ObjectVariant, StagePlan
+from franka_tabletop_rl.scene.contact import pair_sensor_name
 from franka_tabletop_rl.scene.robot import franka_2f85, with_position_iterations
 from franka_tabletop_rl.scene.sensors import (
     exterior_left_camera,
     exterior_right_camera,
     finger_contact,
     front_camera,
+    pair_contact,
     wrist_camera,
 )
 
@@ -176,8 +178,14 @@ def apply_stage_assets(cfg, bundle: Path, stage: dict | None = None, background:
     return stage
 
 
-def mount_stage(cfg, bundle: Path, stage: dict, plan: StagePlan) -> None:
-    """Mount one body per object position and work surface. Build inside ``planned_worlds``."""
+def mount_stage(
+    cfg, bundle: Path, stage: dict, plan: StagePlan, partners: dict[str, tuple[str, ...]] | None = None
+) -> None:
+    """Mount one body per object position and work surface. Build inside ``planned_worlds``.
+
+    ``partners`` maps an object position to the bodies whose contact force on it the tasks read.
+    Each gets a sensor named by :func:`~franka_tabletop_rl.scene.contact.pair_sensor_name`.
+    """
     for index, name in enumerate(plan.entities):
         position, quat = plan.start_poses[index]
         spawns = [_variant_spawn(bundle, variant) for variant in plan.variants[index]]
@@ -194,8 +202,13 @@ def mount_stage(cfg, bundle: Path, stage: dict, plan: StagePlan) -> None:
         prim_path = cfg.scene.surface.prim_path if name == SURFACE_ENTITY else None
         body = _body(name, pose[0], pose[1], variants, prim_path=prim_path)
         setattr(cfg.scene, name, body)
-    if SURFACE_ENTITY not in plan.surface_entities:
+    paths = {name: "{ENV_REGEX_NS}/" + name for name in plan.entities}
+    if SURFACE_ENTITY in plan.surface_entities:
+        paths[SURFACE_ENTITY] = cfg.scene.surface.prim_path
+    else:
         cfg.scene.surface = None
+    for entity, others in (partners or {}).items():
+        setattr(cfg.scene, pair_sensor_name(entity), pair_contact(entity, [paths[other] for other in others]))
     filters = ["{ENV_REGEX_NS}/" + name for name in plan.entities]
     cfg.scene.gripper_left.filter_prim_paths_expr = filters
     cfg.scene.gripper_right.filter_prim_paths_expr = filters

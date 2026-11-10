@@ -18,7 +18,7 @@ PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
 sys.path.insert(0, str(PACKAGE))
 
 import pytest  # noqa: E402
-
+from franka_tabletop_rl.benchmark.geometry import from_box  # noqa: E402
 from franka_tabletop_rl.benchmark.spec import spec_from_success  # noqa: E402
 from franka_tabletop_rl.benchmark.task import ObjectAsset, Placement, TaskLayout  # noqa: E402
 from franka_tabletop_rl.tasks.hl_policy.planner.goals import compile_goals  # noqa: E402
@@ -171,7 +171,7 @@ def _fixture():
         "objects": ["cube"],
         "logical": "all",
         "container": "bin",
-        "require_grasp": ["cube"],
+        "require_gripper_detached": True,
     }
     spec = spec_from_success("t", success, 40.0, {"cube": "item", "bin": "container"})
     scene = TaskLayout("t", "lay", "office", "oak", "put the cube in the bin", placements, spec=spec)
@@ -180,6 +180,15 @@ def _fixture():
         "container": (np.array([[0.5, 0.25, 0.05]]), np.array([[0.0, 0.0, 0.0, 1.0]])),
     }
     contact = {"item": np.zeros(1, dtype=bool), "container": np.zeros(1, dtype=bool)}
+    sizes = {"item": (0.047, 0.047, 0.047), "container": (0.3, 0.2, 0.1)}
+
+    def slot_pose(index, slot):
+        return {
+            "pos": roots[slot][0][index].reshape(1, 3),
+            "quat": np.array([[1.0, 0.0, 0.0, 0.0]]),
+            "geometry": from_box(sizes[slot]),
+        }
+
     tracker = SimpleNamespace(
         num_envs=1,
         task_ids=("t",),
@@ -193,6 +202,8 @@ def _fixture():
         is_lost=lambda pos: bool(pos[2] < -0.15),
         root=lambda index, slot: (roots[slot][0][index], roots[slot][1][index]),
         touching=lambda index, slot: bool(contact[slot][index]),
+        slot_pose=slot_pose,
+        slot_geometry=lambda index, slot: from_box(sizes[slot]),
     )
     points = {
         "item": _box((0.047, 0.047, 0.047)) + np.array([0.0, 0.0, 0.0]),
@@ -219,24 +230,24 @@ def test_goal_queue_covers_each_op_and_leaves_upright_unsupported():
         ("stacked", {"support": "plate"}),
         ("on_side", {"reference": "plate", "side": "left"}),
         ("outside", {"container": "bin"}),
-        ("centered", {}),
-        ("lifted", {}),
+        ("centered", {"reference": "plate"}),
+        ("outside_and_on_surface", {"container": "bin"}),
         ("in_container", {"container": "bin"}),
     ):
         result = queue({"op": op, "object": "cube", **extra})
         assert result.supported and result.goals[0].op == op and result.goals[0].slot == "item"
-    held = queue({"op": "picked", "object": "cube"})
-    assert held.goals[0].op == "picked"
+    held = queue({"op": "picked_up", "object": "cube", "distance": 0.1})
+    assert held.goals[0].op == "picked_up" and held.goals[0].height_m == 0.1
     grouped = queue(
         {
             "op": "all",
             "checks": [
                 {"op": "on_top", "object": "cube", "support": "plate"},
-                {"op": "picked", "object": "plate"},
+                {"op": "picked_up", "object": "plate"},
             ],
         }
     )
-    assert [goal.op for goal in grouped.goals] == ["on_top", "picked"]
+    assert [goal.op for goal in grouped.goals] == ["on_top", "picked_up"]
     ordered = queue({"op": "in_order", "objects": ["plate", "cube"], "container": "bin"})
     assert ordered.ordered and [goal.slot for goal in ordered.goals] == ["plate", "item"]
     either = queue(
@@ -304,6 +315,7 @@ def test_any_goal_follows_the_jittered_layout():
         specs=(spec,),
         task_layouts=(TaskLayout("t", "lay", "office", "oak", "either", published, spec=spec),),
         env_layouts=[TaskLayout("t", "lay", "office", "oak", "either", shifted, spec=spec)],
+        slot_geometry=lambda index, slot: from_box((0.3, 0.2, 0.1)),
     )
     planner = ClassicalTabletopPlanner(tracker, [{}], [{}])
     planner.reset([0])
@@ -321,30 +333,21 @@ def test_the_first_two_ticks_hold_the_measured_tool_pose():
         assert np.allclose(positions[0], tcp[0])
 
 
-def test_outside_drops_onto_the_table_and_skips_a_second_resting_pick():
-    from franka_tabletop_rl.tasks.hl_policy.planner.targets import _clear_of
+def test_outside_drops_onto_the_table_beside_the_container():
+    from franka_tabletop_rl.tasks.hl_policy.planner.goals import PlaceGoal
+    from franka_tabletop_rl.tasks.hl_policy.planner.targets import Body, place_center
 
-    center = _clear_of(
-        np.array([0.5, 0.0, 0.20]),
-        np.array([0.02, 0.02, 0.017]),
-        np.array([0.5, 0.2, 0.05]),
-        np.array([0.1, 0.1, 0.05]),
-        np.eye(3),
-        np.array([0.547, 0.0, 0.0]),
-        np.array([0.35, 0.5, 0.02]),
-    )
-    assert center[2] == pytest.approx(0.017)
+    item = Body(np.array([0.5, 0.0, 0.20]), np.eye(3), from_box((0.04, 0.04, 0.034)))
+    target = Body(np.array([0.5, 0.2, 0.05]), np.eye(3), from_box((0.2, 0.2, 0.1)))
+    table_center, table_half = np.array([0.547, 0.0, 0.0]), np.array([0.35, 0.5, 0.02])
+    center = place_center(PlaceGoal("item", "outside", "container"), item, target, table_center, table_half)
+    # Past the container wall (0.1 m), the item half width (0.02 m), and the 0.05 m clearance, on the table.
+    assert center == pytest.approx([0.67, 0.2, 0.017])
 
     ClassicalTabletopPlanner, _, _, _ = _machine()
     cube = ObjectAsset("cube", (0.047, 0.047, 0.047), "item", "cube.usd")
     bin_ = ObjectAsset("bin", (0.3, 0.2, 0.1), "container", "bin.usd")
-    success = {
-        "op": "all",
-        "checks": [
-            {"op": "outside", "object": "cube", "container": "bin"},
-            {"op": "resting", "object": "cube"},
-        ],
-    }
+    success = {"op": "outside_and_on_surface", "object": "cube", "container": "bin"}
     spec = spec_from_success("t", success, 40.0, {"cube": "item", "bin": "container"})
     placements = [
         Placement("item", cube, (0.55, -0.2, 0.12), "item"),
@@ -361,7 +364,7 @@ def test_outside_drops_onto_the_table_and_skips_a_second_resting_pick():
     )
     planner = ClassicalTabletopPlanner(tracker, [{}], [{}])
     planner.reset([0])
-    assert [goal.op for goal in planner.contexts[0].goals] == ["outside"]
+    assert [goal.op for goal in planner.contexts[0].goals] == ["outside_and_on_surface"]
 
 
 def test_table_box_uses_the_task_surface_and_falls_back_without_a_stage():

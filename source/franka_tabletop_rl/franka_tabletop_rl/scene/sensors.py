@@ -65,6 +65,16 @@ def finger_contact(name: str) -> ContactSensorCfg:
     )
 
 
+def pair_contact(entity: str, partner_paths: list[str]) -> ContactSensorCfg:
+    """Contact force [N] on object position ``entity``, with one filter per partner prim path, in order."""
+    return ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/" + entity,
+        update_period=0.0,
+        history_length=1,
+        filter_prim_paths_expr=partner_paths,
+    )
+
+
 def front_camera() -> CameraCfg:
     """Front view of the table."""
     return CameraCfg(

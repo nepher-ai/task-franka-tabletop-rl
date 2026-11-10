@@ -25,7 +25,7 @@ from franka_tabletop_rl.frames import MIN_REACH_X_M, REACH_HIGH_M, REACH_LOW_M, 
 from ..tracker import TaskTracker
 from .goals import HoldGoal, PlaceGoal, compile_goals
 from .grasp import TOOL_Z_MIN_M, Grasp, fallback_grasp, find_grasps, quat_wxyz_to_matrix, sample_prim_points, tool_yaw
-from .targets import place_center
+from .targets import Body, place_center
 
 # Carrot speed limits: the tracker was trained on steps of up to 12 cm, and slower is more precise.
 STEP_M = 0.05
@@ -41,6 +41,8 @@ LIFT_MIN_M = 0.04
 MISSED_CLOSURE = 0.92
 MAX_ATTEMPTS = 6
 TILT_RESEARCH_RAD = 0.3
+# Goals that drop the object into a container cell.
+_CONTAINER_OPS = ("in_container", "enclosed")
 # Oak box used when a stage does not name a work surface [m].
 _OAK_CENTER = np.array([0.547, 0.0, 0.0])
 _OAK_HALF = np.array([0.35, 0.5, 0.02])
@@ -71,16 +73,6 @@ def table_box(stage: dict | None, layout) -> tuple[np.ndarray, np.ndarray]:
         raw = record.get("center_xy") or tuple(record.get("pos", (0.547, 0.0)))[:2]
         center = np.array([float(raw[0]), float(raw[1]), table_z])
     return center, half
-
-
-def _without_redundant_resting(goals: list) -> list:
-    """Drop ``resting`` when that slot is also placed outside a container or off a support."""
-    moved = {goal.slot for goal in goals if isinstance(goal, PlaceGoal) and goal.op in ("outside", "off")}
-    return [
-        goal
-        for goal in goals
-        if not (isinstance(goal, PlaceGoal) and goal.op == "resting" and goal.slot in moved)
-    ]
 
 
 class Stage(IntEnum):
@@ -188,16 +180,15 @@ class ClassicalTabletopPlanner:
         check = None if spec is None else spec.check
         return compile_goals(check, positions)
 
-    def _container_offsets(self, task: int, goals: list) -> dict[int, tuple[float, float]]:
-        """Drop offset [m] of each ``in_container`` goal, in its container frame."""
+    def _container_offsets(self, env: int, goals: list) -> dict[int, tuple[float, float]]:
+        """Drop offset [m] of each container goal, from the center of its container box, in its frame."""
         by_container: dict[str, list[int]] = {}
         for index, goal in enumerate(goals):
-            if isinstance(goal, PlaceGoal) and goal.op == "in_container":
+            if isinstance(goal, PlaceGoal) and goal.op in _CONTAINER_OPS:
                 by_container.setdefault(goal.target, []).append(index)
         offsets: dict[int, tuple[float, float]] = {}
-        sizes = {item.slot: item.asset.size_m for item in self.tracker.task_layouts[task].placements}
         for container, members in by_container.items():
-            size = sizes[container]
+            size = np.ptp(self.tracker.slot_geometry(env, container).box_corners, axis=0)
             for index, offset in zip(members, drop_offsets(len(members), size[0] / 2, size[1] / 2), strict=True):
                 offsets[index] = offset
         return offsets
@@ -212,12 +203,12 @@ class ClassicalTabletopPlanner:
             index = int(index)
             context = _Context()
             queue = self._queue(index)
-            context.goals = _without_redundant_resting(list(queue.goals))
+            context.goals = list(queue.goals)
             context.ordered = queue.ordered
             context.supported = queue.supported and bool(context.goals)
             if context.supported:
                 context.todo = list(range(len(context.goals)))
-                context.offsets = self._container_offsets(self._task(index), context.goals)
+                context.offsets = self._container_offsets(index, context.goals)
             else:
                 context.stage = Stage.DONE
                 self._warn(self.tracker.task_ids[self._task(index)])
@@ -225,34 +216,34 @@ class ClassicalTabletopPlanner:
 
     # ------------------------------------------------------------------ geometry
 
-    def _anchor(self, slot: str, index: int):
-        """Published pose of an anchor slot, or None when the slot is a spawned body."""
+    def _is_anchor(self, slot: str, index: int) -> bool:
         placement = self.tracker.env_layouts[index].by_slot().get(slot)
-        if placement is None or placement.asset.kind != "anchor":
-            return None
-        return placement
+        return placement is not None and placement.asset.kind == "anchor"
+
+    def _body(self, slot: str, index: int) -> Body:
+        """Pose and success geometry of ``slot``. An anchor is the work surface."""
+        pose = self.tracker.slot_pose(index, slot)
+        pos = np.asarray(pose["pos"], dtype=np.float64).reshape(3)
+        rot = quat_wxyz_to_matrix(np.asarray(pose["quat"], dtype=np.float64).reshape(4))
+        return Body(pos, rot, pose["geometry"])
 
     def _pose(self, slot: str, index: int) -> tuple[np.ndarray, np.ndarray]:
-        anchor = self._anchor(slot, index)
-        if anchor is not None:
-            pos = np.asarray(anchor.position_m, dtype=np.float64)
-            quat = np.asarray(anchor.quat_wxyz, dtype=np.float64)
-            return pos, quat_wxyz_to_matrix(quat)
+        if self._is_anchor(slot, index):
+            body = self._body(slot, index)
+            return body.pos, body.rot
         root_pos, root_quat = self.tracker.root(index, slot)
         x, y, z, w = root_quat.astype(np.float64)
         return root_pos.astype(np.float64), quat_wxyz_to_matrix(np.array([w, x, y, z]))
 
     def _top_z(self, slot: str, index: int) -> float:
-        anchor = self._anchor(slot, index)
-        if anchor is not None:
-            return float(anchor.position_m[2] + anchor.asset.size_m[2] / 2)
+        if self._is_anchor(slot, index):
+            return float(self._body(slot, index).corners[:, 2].max())
         pos, rot = self._pose(slot, index)
         return float((self.points[self._task(index)][slot][::3] @ rot.T)[:, 2].max() + pos[2])
 
     def _bottom_z(self, slot: str, index: int) -> float:
-        anchor = self._anchor(slot, index)
-        if anchor is not None:
-            return float(anchor.position_m[2] - anchor.asset.size_m[2] / 2)
+        if self._is_anchor(slot, index):
+            return float(self._body(slot, index).corners[:, 2].min())
         pos, rot = self._pose(slot, index)
         return float((self.points[self._task(index)][slot][::3] @ rot.T)[:, 2].min() + pos[2])
 
@@ -447,46 +438,33 @@ class ClassicalTabletopPlanner:
             context.carry_z = float(np.clip(goal.height_m + context.below + CARRY_CLEARANCE_M, TRAVEL_Z_M, 0.34))
             context.release = np.array([context.grasp_center[0], context.grasp_center[1], context.carry_z])
             return
-        if goal.op == "in_container":
+        if goal.op in _CONTAINER_OPS:
             top = self._top_z(goal.target, index)
             context.carry_z = float(np.clip(top + context.below + CARRY_CLEARANCE_M, TRAVEL_Z_M, 0.34))
-            c_pos, c_rot = self._pose(goal.target, index)
-            dx, dy = context.offsets[context.current]
-            target_root = c_pos + c_rot @ np.array([dx, dy, 0.0])
             o_pos, _ = self._pose(slot, index)
-            shift = context.grasp_center[:2] - o_pos[:2]
-            context.release = np.array(
-                [target_root[0] + shift[0], target_root[1] + shift[1], top + context.below + RELEASE_CLEARANCE_M]
-            )
+            xy = self._drop_root_xy(context, index) + (context.grasp_center[:2] - o_pos[:2])
+            context.release = np.array([xy[0], xy[1], top + context.below + RELEASE_CLEARANCE_M])
             return
         context.carry_z = TRAVEL_Z_M
         context.release = self._other_release(context, index, goal)
 
     def _other_release(self, context: _Context, index: int, goal: PlaceGoal) -> np.ndarray:
-        """Tool release position [m] for a goal other than ``in_container``."""
-        o_pos, _ = self._pose(goal.slot, index)
-        item_half = self._half(index, goal.slot)
-        target_pos = target_half = target_rot = None
-        if goal.target:
-            target_pos, target_rot = self._pose(goal.target, index)
-            target_half = self._half(index, goal.target)
-        occupied = []
-        for placement in self.tracker.env_layouts[index].placements:
-            if placement.slot == goal.slot or placement.asset.kind == "anchor":
-                continue
-            center = np.asarray(placement.position_m, dtype=np.float64)
-            occupied.append((center, np.asarray(placement.asset.size_m) / 2))
+        """Tool release position [m] for a goal other than a container goal."""
+        item = self._body(goal.slot, index)
         table_center, table_half = self._table(index)
-        center = place_center(
-            goal, o_pos, item_half, target_pos, target_half, target_rot, occupied, table_center, table_half
-        )
-        shift = context.grasp_center[:2] - o_pos[:2]
+        center = place_center(goal, item, self._body(goal.target, index), table_center, table_half)
+        shift = context.grasp_center[:2] - item.pos[:2]
         height = float(center[2] + context.below + RELEASE_CLEARANCE_M)
         return np.array([center[0] + shift[0], center[1] + shift[1], height])
 
-    def _half(self, index: int, slot: str) -> np.ndarray:
-        layout = self.tracker.task_layouts[self._task(index)]
-        return np.asarray(layout.by_slot()[slot].asset.size_m, dtype=np.float64) / 2
+    def _drop_root_xy(self, context: _Context, index: int) -> np.ndarray:
+        """Root xy [m] that puts the hull center of the item at its cell of the container."""
+        goal = context.goals[context.current]
+        container = self._body(goal.target, index)
+        item = self._body(goal.slot, index)
+        dx, dy = context.offsets[context.current]
+        cell = container.box_center + container.rot @ np.array([dx, dy, 0.0])
+        return cell[:2] - (item.rot @ item.geometry.hull_center)[:2]
 
     def _tool_to_bottom(self, slot: str, index: int, context: _Context) -> float:
         return max(context.grasp_center[2] - self._bottom_z(slot, index), 0.0)
@@ -527,13 +505,10 @@ class ClassicalTabletopPlanner:
 
     def _plan_release_xy(self, context: _Context, index: int, tcp: np.ndarray) -> None:
         goal = context.goals[context.current]
-        if not isinstance(goal, PlaceGoal) or goal.op != "in_container":
+        if not isinstance(goal, PlaceGoal) or goal.op not in _CONTAINER_OPS:
             return
-        c_pos, c_rot = self._pose(goal.target, index)
-        dx, dy = context.offsets[context.current]
-        target_root = c_pos + c_rot @ np.array([dx, dy, 0.0])
         o_pos, _ = self._pose(goal.slot, index)
-        context.release[:2] = target_root[:2] + (tcp[:2] - o_pos[:2])
+        context.release[:2] = self._drop_root_xy(context, index) + (tcp[:2] - o_pos[:2])
 
     def _lower(self, context, index, tcp, closure) -> None:
         context.grip = 1.0
