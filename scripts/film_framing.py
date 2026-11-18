@@ -11,23 +11,13 @@ confirmed with the preview mode of ``record_film.py``.
 """
 
 import argparse
-import sys
-import types
+import site
 from pathlib import Path
 
 import numpy as np
 
 PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-sys.path.insert(0, str(PACKAGE))
-try:
-    import franka_tabletop_rl.film  # noqa: F401
-except ImportError:
-    # The package registers Gym tasks and needs Isaac Lab. The film previews do not, so load its folders only.
-    root = PACKAGE / "franka_tabletop_rl"
-    for name, folder in (("franka_tabletop_rl", root), ("franka_tabletop_rl.tasks", root / "tasks")):
-        stub = types.ModuleType(name)
-        stub.__path__ = [str(folder)]
-        sys.modules[name] = stub
+site.addsitedir(str(PACKAGE))
 
 from franka_tabletop_rl.benchmark.bundle import DEFAULT_ENV_ID, load_benchmark, resolve_bundle  # noqa: E402
 from franka_tabletop_rl.film import framing, shots  # noqa: E402

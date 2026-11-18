@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import sys
-import types
 from types import SimpleNamespace
 
 import numpy as np
@@ -151,32 +149,14 @@ class _FakeEnv:
 
 @pytest.fixture
 def recorder_module(monkeypatch):
-    """``film.recorder`` imported against a stub of the few Isaac Lab names it uses, and fake render parts."""
-    managers = types.ModuleType("isaaclab.managers")
-
-    class RecorderTerm:
-        def __init__(self, cfg, env):
-            self.cfg, self._env = cfg, env
-
-    managers.RecorderTerm = RecorderTerm
-    managers.RecorderTermCfg = type("RecorderTermCfg", (), {})
-    managers.RecorderManagerBaseCfg = type("RecorderManagerBaseCfg", (), {})
-    managers.DatasetExportMode = SimpleNamespace(EXPORT_NONE=0)
-    utils = types.ModuleType("isaaclab.utils")
-    utils.configclass = lambda cls: cls
-    package = types.ModuleType("isaaclab")
-    package.__path__ = []
-    for name, module in (("isaaclab", package), ("isaaclab.managers", managers), ("isaaclab.utils", utils)):
-        monkeypatch.setitem(sys.modules, name, module)
-    sys.modules.pop("franka_tabletop_rl.film.recorder", None)
+    """``film.recorder`` with fake render parts. Isaac Lab bases are stand-ins when it is not installed."""
     module = importlib.import_module("franka_tabletop_rl.film.recorder")
     monkeypatch.setattr(module, "FilmCamera", _FakeCamera)
     monkeypatch.setattr(module, "VideoSink", _FakeVideo)
     monkeypatch.setattr(module, "PlannerPointPass", _FakePoints)
     _FakeCamera.instances.clear()
     _FakeVideo.instances.clear()
-    yield module
-    sys.modules.pop("franka_tabletop_rl.film.recorder", None)
+    return module
 
 
 def _term(module, env):

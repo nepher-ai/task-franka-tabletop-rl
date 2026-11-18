@@ -10,3 +10,4 @@ requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["source/franka_tabletop_rl"]

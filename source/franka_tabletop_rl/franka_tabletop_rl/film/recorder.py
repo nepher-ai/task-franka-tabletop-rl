@@ -18,12 +18,16 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from isaaclab.managers import DatasetExportMode, RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
-from isaaclab.utils import configclass
-
 from . import rig
 from .latch import LOST, SUCCESS
 from .points import Canvas, PlannerPointPass, draw_frame
+from .recorder_bases import (
+    DatasetExportMode,
+    RecorderManagerBaseCfg,
+    RecorderTerm,
+    RecorderTermCfg,
+    configclass,
+)
 from .render import FilmCamera, VideoSink, save_png
 from .shots import CONTROL_HZ, PointResolver
 from .timeline import EpisodeLog, FrameClock, compare_events

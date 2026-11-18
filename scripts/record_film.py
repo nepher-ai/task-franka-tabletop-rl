@@ -20,7 +20,6 @@ the replay matched.
 # Launch Isaac Sim first. Modules that import pxr must load after the app starts.
 
 import argparse
-import sys
 
 from isaaclab.app import AppLauncher
 
@@ -298,4 +297,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     simulation_app.close()
-    sys.exit(0)
+    raise SystemExit(0)

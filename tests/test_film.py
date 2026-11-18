@@ -9,16 +9,12 @@ from __future__ import annotations
 
 import math
 import re
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-sys.path.insert(0, str(PACKAGE))
-
-from franka_tabletop_rl.film import latch, points, rig, selection, settings, shots, timeline  # noqa: E402
+from franka_tabletop_rl.film import latch, points, rig, selection, settings, shots, timeline
 
 
 def _identity(point):

@@ -14,8 +14,6 @@
 
 Use this repository when you need Isaac Lab Gym environments for Franka **tabletop pick-and-place** (`Nepher-FrankaTabletopRL-LL-*`, `Nepher-FrankaTabletopRL-HL-*`), or the EnvHub benchmarks `franka-tabletop-rl-v0`, `franka-tabletop-rl-v1`, `franka-tabletop-rl-v2`, and `franka-tabletop-rl-v3`.
 
-Agents: start at [`llms.txt`](llms.txt) (index) or [`llms-full.txt`](llms-full.txt) (single-file context).
-
 | | |
 |---|---|
 | **Robot** | Franka with a Robotiq 2F-85 gripper |

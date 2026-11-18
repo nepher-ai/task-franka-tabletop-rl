@@ -5,35 +5,13 @@
 
 from __future__ import annotations
 
-import sys
+import site
 from pathlib import Path
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-if str(PACKAGE) not in sys.path:
-    sys.path.insert(0, str(PACKAGE))
-
-# Importing the package registers Gym tasks and needs Isaac Lab. Pure tests load submodules only.
-try:
-    import isaaclab_tasks  # noqa: F401
-except ImportError:
-    import types
-
-    def _namespace(name: str, folder: Path) -> None:
-        if name in sys.modules:
-            return
-        stub = types.ModuleType(name)
-        stub.__path__ = [str(folder)]
-        stub.__package__ = name
-        sys.modules[name] = stub
-
-    root = PACKAGE / "franka_tabletop_rl"
-    _namespace("franka_tabletop_rl", root)
-    _namespace("franka_tabletop_rl.tasks", root / "tasks")
-    _namespace("franka_tabletop_rl.tasks.hl_policy", root / "tasks" / "hl_policy")
-    _namespace("franka_tabletop_rl.tasks.hl_policy.planner", root / "tasks" / "hl_policy" / "planner")
-    _namespace("franka_tabletop_rl.tasks.hl_policy.mdp", root / "tasks" / "hl_policy" / "mdp")
+# The checkout imports without an editable install. pytest's pythonpath puts this directory first.
+site.addsitedir(str(Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"))
 
 
 def pytest_configure(config):

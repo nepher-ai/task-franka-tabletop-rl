@@ -8,21 +8,16 @@
 from __future__ import annotations
 
 import math
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-sys.path.insert(0, str(PACKAGE))
-
-import pytest  # noqa: E402
-from franka_tabletop_rl.benchmark.geometry import from_box  # noqa: E402
-from franka_tabletop_rl.benchmark.spec import spec_from_success  # noqa: E402
-from franka_tabletop_rl.benchmark.task import ObjectAsset, Placement, TaskLayout  # noqa: E402
-from franka_tabletop_rl.tasks.hl_policy.planner.goals import compile_goals  # noqa: E402
-from franka_tabletop_rl.tasks.hl_policy.planner.grasp import (  # noqa: E402
+from franka_tabletop_rl.benchmark.geometry import from_box
+from franka_tabletop_rl.benchmark.spec import spec_from_success
+from franka_tabletop_rl.benchmark.task import ObjectAsset, Placement, TaskLayout
+from franka_tabletop_rl.tasks.hl_policy.planner.goals import compile_goals
+from franka_tabletop_rl.tasks.hl_policy.planner.grasp import (
     MAX_WIDTH_M,
     PALM_CLEARANCE_M,
     TOOL_Z_MIN_M,

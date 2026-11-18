@@ -5,18 +5,16 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
-import sys
+import sysconfig
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import torch
 
-PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-sys.path.insert(0, str(PACKAGE))
-
-from franka_tabletop_rl.tasks.hl_policy.eval_compat import wrap_for_eval  # noqa: E402
+from franka_tabletop_rl.tasks.hl_policy.eval_compat import wrap_for_eval
 
 
 class _Env:
@@ -103,18 +101,37 @@ def test_arm_start_offsets_differ_per_round_and_env_and_repeat_for_the_same_seed
     assert not np.array_equal(rounds[0], arm_start_offsets(101, 0, envs, half))
 
 
+def _python() -> str:
+    """Interpreter for this environment."""
+    scripts = Path(sysconfig.get_path("scripts"))
+    # A venv keeps the executable next to pip. A Windows base install keeps it in the prefix.
+    for folder in (scripts, scripts.parent):
+        for name in ("python.exe", "python", "python3"):
+            candidate = folder / name
+            if candidate.is_file():
+                return str(candidate)
+    found = shutil.which("python") or shutil.which("python3")
+    if found is None:
+        raise RuntimeError("could not find the Python interpreter")
+    return found
+
+
 def test_play_config_import_does_not_load_openusd():
     import pytest
 
     pytest.importorskip("isaaclab")
     # Play builds this config before Kit starts. Importing OpenUSD first breaks Kit's USD extensions.
     script = (
-        "import sys\n"
+        "import gc\n"
         "import franka_tabletop_rl.tasks.hl_policy.hl_env_cfg\n"
         "franka_tabletop_rl.tasks.hl_policy.hl_env_cfg.HLEnvCfg_PLAY()\n"
-        "sys.exit(1 if 'pxr' in sys.modules else 0)\n"
+        "loaded = any(\n"
+        "    getattr(obj, '__name__', None) == 'pxr' and type(obj).__name__ == 'module'\n"
+        "    for obj in gc.get_objects()\n"
+        ")\n"
+        "raise SystemExit(int(loaded))\n"
     )
-    completed = subprocess.run([sys.executable, "-c", script], check=False)
+    completed = subprocess.run([_python(), "-c", script], check=False)
     assert completed.returncode == 0
 
 
