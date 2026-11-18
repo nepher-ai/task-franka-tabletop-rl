@@ -26,7 +26,6 @@ setup(
     package_data={"franka_tabletop_rl": ["assets/robots/*.usd"]},
     python_requires=">=3.11",
     install_requires=["numpy>=1.20", "pyyaml"],
-    extras_require={"record": ["pyarrow>=14", "av>=12"]},
     entry_points={"isaaclab.tasks": ["franka_tabletop_rl = franka_tabletop_rl.tasks"]},
     zip_safe=False,
 )

@@ -43,13 +43,7 @@ class HLPoseCommand(CommandTerm):
         self.finger_idx = self.robot.find_joints("finger_joint")[0][0]
         benchmark = load_benchmark(resolve_bundle(cfg.env_id))
         layouts = [benchmark.task(task_id) for task_id in cfg.task_ids]
-        self.tracker = TaskTracker(
-            env,
-            layouts,
-            env.cfg.stage_plan,
-            pose_jitter_m=cfg.pose_jitter_m,
-            seed=cfg.layout_seed,
-        )
+        self.tracker = TaskTracker(env, layouts, env.cfg.stage_plan, env.layout_sampler)
         self.planner: ClassicalTabletopPlanner = build_planner(env, self.tracker, benchmark.stage)
         self._ee_speed = EeSpeedTrace(self.num_envs)
         self._ee_speed_step = -1
@@ -124,7 +118,11 @@ class HLPoseCommandCfg(CommandTermCfg):
     task_ids: tuple[str, ...] = ()
     """Tasks of the stage. Env ``i`` runs task ``i % T``."""
     pose_jitter_m: float = 0.0
-    """Per-episode shift [m] of each object in the table plane. Zero keeps the benchmark layout."""
+    """Half-range [m] used for both axes when ``jitter_x`` or ``jitter_y`` is omitted."""
+    jitter_x: float | None = None
+    """Half-range [m] of the shared x shift. ``None`` uses ``pose_jitter_m``."""
+    jitter_y: float | None = None
+    """Half-range [m] of the shared y shift. ``None`` uses ``pose_jitter_m``."""
     layout_seed: int = 1
 
 

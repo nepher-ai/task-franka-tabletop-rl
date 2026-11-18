@@ -16,8 +16,17 @@ import numpy as np
 
 from franka_tabletop_rl.benchmark.spec import Check, Goal
 
-_HOLD = {"picked", "lifted"}
-_PLACE = {"in_container", "on_top", "stacked", "on_side", "outside", "off", "centered", "resting"}
+_HOLD = {"picked_up"}
+_PLACE = {
+    "in_container",
+    "enclosed",
+    "on_top",
+    "stacked",
+    "on_side",
+    "outside",
+    "outside_and_on_surface",
+    "centered",
+}
 
 
 @dataclass(frozen=True)
@@ -28,12 +37,11 @@ class PlaceGoal:
     op: str
     target: str
     side: str = "left"
-    margin: float = 0.0
 
 
 @dataclass(frozen=True)
 class HoldGoal:
-    """Pick ``slot`` and hold it up. There is no release."""
+    """Pick ``slot`` and hold it ``height_m`` [m] above the work surface. There is no release."""
 
     slot: str
     op: str
@@ -87,11 +95,10 @@ def _select(check: Check, positions: dict[str, tuple[float, float]], home: np.nd
 
 def _convert(goal: Goal) -> PlaceGoal | HoldGoal:
     if goal.op in _HOLD:
-        height = goal.margin if goal.op == "picked" and goal.margin > 0.0 else 0.05
-        return HoldGoal(goal.slot, goal.op, height)
+        return HoldGoal(goal.slot, goal.op, goal.distance)
     if goal.op not in _PLACE:
         raise ValueError(f"planner has no placement for {goal.op}")
-    return PlaceGoal(goal.slot, goal.op, goal.target, goal.side, goal.margin)
+    return PlaceGoal(goal.slot, goal.op, goal.target, goal.side)
 
 
 def _child_distance(check: Check, positions, home) -> float:

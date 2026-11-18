@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -104,24 +105,91 @@ def layout_from_payload(payload: dict, *, time_limit_s: float = TASK_TIME_LIMIT_
     )
 
 
-def with_jitter(layout: TaskLayout, seed: int, pose_jitter_m: float) -> TaskLayout:
-    """Shift object positions in the table plane by up to ``pose_jitter_m`` [m]. Meshes stay put."""
-    if pose_jitter_m <= 0.0:
+ShiftLimits = tuple[tuple[float, float], tuple[float, float]]
+"""Allowed ``(dx, dy)`` as ``((x_low, x_high), (y_low, y_high))`` [m]."""
+
+
+def footprint_half_extents(size_m: Sequence[float], quat_wxyz: Sequence[float]) -> tuple[float, float]:
+    """Half extents [m] along x and y of the world-aligned box around a rotated box of size ``size_m``."""
+    w, x, y, z = (float(value) for value in quat_wxyz)
+    norm = (w * w + x * x + y * y + z * z) ** 0.5 or 1.0
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
+    rotation = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        ]
+    )
+    half = np.abs(rotation) @ (np.asarray(size_m, dtype=np.float64) / 2.0)
+    return float(half[0]), float(half[1])
+
+
+def shift_limits(
+    layout: TaskLayout, center_xy: Sequence[float], half_xy: Sequence[float], margin_m: float
+) -> ShiftLimits:
+    """Shifts [m] that keep the objects on the work surface at ``margin_m`` from its edge.
+
+    ``center_xy`` and ``half_xy`` are the surface center and half sizes [m] in the frame of the placements.
+    Only objects whose center is on the surface limit the range. Racks and shelves beside the table move with
+    the group. The range always contains 0: an object that already overhangs the margin cannot move further
+    out, and does not block a move inward. ``sdg-gen`` applies the same rule to the bundles it derives.
+    """
+    lows = [-np.inf, -np.inf]
+    highs = [np.inf, np.inf]
+    for placement in layout.placements:
+        if placement.asset.kind == "anchor":
+            continue
+        position = [float(value) for value in placement.position_m[:2]]
+        if any(abs(position[axis] - center_xy[axis]) > half_xy[axis] for axis in range(2)):
+            continue
+        half = footprint_half_extents(placement.asset.size_m, placement.quat_wxyz)
+        for axis in range(2):
+            low = center_xy[axis] - half_xy[axis] + margin_m - (position[axis] - half[axis])
+            high = center_xy[axis] + half_xy[axis] - margin_m - (position[axis] + half[axis])
+            lows[axis] = max(lows[axis], min(low, 0.0))
+            highs[axis] = min(highs[axis], max(high, 0.0))
+    return (lows[0], highs[0]), (lows[1], highs[1])
+
+
+def _draw_shift(rng: np.random.Generator, span: float, limit: tuple[float, float] | None) -> float:
+    if span <= 0.0:
+        return 0.0
+    low, high = (-span, span) if limit is None else (max(-span, limit[0]), min(span, limit[1]))
+    return float(rng.uniform(low, high))
+
+
+def with_jitter(
+    layout: TaskLayout,
+    seed: int,
+    jitter_x: float,
+    jitter_y: float | None = None,
+    limits: ShiftLimits | None = None,
+) -> TaskLayout:
+    """Add one shared table-plane offset to every object. Meshes, height, and rotation stay put.
+
+    ``jitter_x`` and ``jitter_y`` are half-ranges [m]. One uniform draw on each axis is added to
+    every non-anchor placement, so object spacing is unchanged. ``jitter_y`` defaults to ``jitter_x``.
+    ``limits`` narrows the draw so that the objects stay on the table, see ``shift_limits``. Anchors and
+    ``surface_pose`` stay as authored. The robot and the tables are not placements.
+    """
+    span_x = float(jitter_x)
+    span_y = span_x if jitter_y is None else float(jitter_y)
+    if span_x <= 0.0 and span_y <= 0.0:
         return layout
     rng = np.random.default_rng(int(seed))
+    dx = _draw_shift(rng, span_x, None if limits is None else limits[0])
+    dy = _draw_shift(rng, span_y, None if limits is None else limits[1])
     placements = []
     for placement in layout.placements:
         if placement.asset.kind == "anchor":
             placements.append(placement)
             continue
         x, y, z = placement.position_m
-        x += float(rng.uniform(-pose_jitter_m, pose_jitter_m))
-        y += float(rng.uniform(-pose_jitter_m, pose_jitter_m))
         placements.append(
             Placement(
                 slot=placement.slot,
                 asset=placement.asset,
-                position_m=(x, y, z),
+                position_m=(x + dx, y + dy, z),
                 role=placement.role,
                 quat_wxyz=placement.quat_wxyz,
                 scale=placement.scale,

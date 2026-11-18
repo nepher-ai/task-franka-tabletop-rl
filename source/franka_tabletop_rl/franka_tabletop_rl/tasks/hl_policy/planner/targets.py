@@ -3,128 +3,100 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Object-center positions [m] that make a benchmark predicate true.
+"""Object root positions [m] that make a benchmark predicate true, on the success geometry.
 
-``in_container`` is placed on the container grid in the planner. Every other op is handled here.
+``in_container`` and ``enclosed`` are placed on the container grid in the planner. Every other op
+is handled here.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
-from franka_tabletop_rl.benchmark.predicates import inside, on_footprint, relative_side
+from franka_tabletop_rl.benchmark.geometry import AssetGeometry
 
 from .goals import PlaceGoal
 
 # Extra gap [m] past the predicate's own threshold, so the object is not left intersecting.
 _GAP_M = 0.02
+# Free space [m] kept between a container and an object placed beside or outside it.
+_CLEARANCE_M = 0.05
+
+_SIDE_AXES = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}
+
+
+@dataclass(frozen=True)
+class Body:
+    """Root pose [m] and root-frame geometry of one object.
+
+    Attributes:
+        pos: Root position [m], shape ``[3]``.
+        rot: Body-to-env rotation matrix, shape ``[3, 3]``.
+        geometry: Success geometry of the mesh.
+    """
+
+    pos: np.ndarray
+    rot: np.ndarray
+    geometry: AssetGeometry
+
+    @property
+    def corners(self) -> np.ndarray:
+        """Box corners [m] in the env frame, shape ``[8, 3]``."""
+        return self.pos + self.geometry.box_corners @ self.rot.T
+
+    @property
+    def box_center(self) -> np.ndarray:
+        """Center [m] of the box around the mesh, in the env frame."""
+        return self.pos + self.rot @ self.geometry.box_center
 
 
 def place_center(
-    goal: PlaceGoal,
-    item_pos: np.ndarray,
-    item_half: np.ndarray,
-    target_pos: np.ndarray | None,
-    target_half: np.ndarray | None,
-    target_rot: np.ndarray | None,
-    occupied: list[tuple[np.ndarray, np.ndarray]],
-    table_center: np.ndarray,
-    table_half: np.ndarray,
+    goal: PlaceGoal, item: Body, target: Body, table_center: np.ndarray, table_half: np.ndarray
 ) -> np.ndarray:
-    """Object-center position [m] that satisfies ``goal``. ``occupied`` is ``(center, half)`` to avoid."""
-    item_pos = np.asarray(item_pos, dtype=np.float64)
-    item_half = np.asarray(item_half, dtype=np.float64)
-    if goal.op in ("on_top", "stacked") and target_pos is not None and target_half is not None:
-        center = np.array(target_pos, dtype=np.float64)
-        center[2] = float(target_pos[2] + target_half[2] + item_half[2] + _GAP_M)
-        return center
-    if goal.op == "on_side" and target_pos is not None and target_half is not None:
-        return _beside(goal.side, target_pos, target_half, item_half)
-    if goal.op == "centered":
-        anchor = np.asarray(target_pos if target_pos is not None else table_center, dtype=np.float64)
-        center = anchor.copy()
-        center[2] = float(item_pos[2])
-        return center
-    if goal.op in ("outside", "off") and target_pos is not None and target_half is not None:
-        return _clear_of(item_pos, item_half, target_pos, target_half, target_rot, table_center, table_half)
-    if goal.op == "resting":
-        height = goal.margin or float(table_center[2])
-        return _free_spot(item_pos, item_half, occupied, table_center, table_half, height)
-    return _free_spot(item_pos, item_half, occupied, table_center, table_half, float(item_pos[2]))
+    """Root position [m] at which ``item`` meets ``goal``, keeping its orientation.
 
-
-def placement_satisfies(
-    goal: PlaceGoal, center: np.ndarray, item_half: np.ndarray, target_pos, target_half, target_quat
-) -> bool:
-    """Whether an object centered at ``center`` [m] meets ``goal``."""
-    item = {
-        "pos": np.asarray(center, dtype=np.float64).reshape(1, 3),
-        "quat": np.array([[1.0, 0.0, 0.0, 0.0]]),
-        "half": item_half,
-    }
-    if target_pos is None:
-        return True
-    target = {
-        "pos": np.asarray(target_pos, dtype=np.float64).reshape(1, 3),
-        "half": np.asarray(target_half, dtype=np.float64),
-        "quat": None if target_quat is None else np.asarray(target_quat, dtype=np.float64).reshape(1, 4),
-    }
+    ``table_center`` and ``table_half`` bound the work surface [m] for ops that drop on it.
+    """
+    to_box = item.box_center - item.pos
+    bottom = float(item.corners[:, 2].min() - item.pos[2])
     if goal.op in ("on_top", "stacked"):
-        return bool(on_footprint(item["pos"], target["pos"], target["half"]).reshape(-1)[0])
+        low, high = target.corners.min(axis=0), target.corners.max(axis=0)
+        middle = (low + high) / 2.0
+        return np.array([middle[0] - to_box[0], middle[1] - to_box[1], high[2] + _GAP_M - bottom])
     if goal.op == "on_side":
-        return bool(relative_side(item["pos"], target["pos"], goal.side).reshape(-1)[0])
-    if goal.op == "outside":
-        return not bool(inside(item["pos"], target["pos"], target["half"], target["quat"]).reshape(-1)[0])
-    return True
+        return _beside(goal.side, item, target, bottom)
+    if goal.op == "centered":
+        middle = target.box_center
+        return np.array([middle[0] - to_box[0], middle[1] - to_box[1], item.pos[2]])
+    if goal.op in ("outside", "outside_and_on_surface"):
+        return _clear_of(item, target, table_center, table_half, bottom)
+    raise KeyError(f"planner has no placement for {goal.op}")
 
 
-def _beside(side: str, target_pos, target_half, item_half) -> np.ndarray:
-    axis = {"left": (1, 1.0), "right": (1, -1.0), "front": (0, -1.0), "behind": (0, 1.0)}[side]
-    index, sign = axis
-    gap = float(target_half[index] + item_half[index] + 0.05)
-    center = np.array(target_pos, dtype=np.float64)
-    center[index] = float(target_pos[index] + sign * gap)
-    center[2] = float(target_pos[2] - target_half[2] + item_half[2])
+def _beside(side: str, item: Body, target: Body, bottom: float) -> np.ndarray:
+    index, sign = _SIDE_AXES[side]
+    # The side test reads root positions, so the root of the item steps off the root of the target.
+    edge = float((sign * (target.corners - target.pos)[:, index]).max())
+    back = float((-sign * (item.corners - item.pos)[:, index]).max())
+    center = np.array(target.pos, dtype=np.float64)
+    center[index] += sign * (edge + back + _CLEARANCE_M)
+    center[2] = float(target.corners[:, 2].min() - bottom)
     return center
 
 
-def _clear_of(item_pos, item_half, target_pos, target_half, target_rot, table_center, table_half) -> np.ndarray:
-    direction = np.array([1.0, 0.0, 0.0])
-    if target_rot is not None:
-        direction = np.asarray(target_rot, dtype=np.float64)[:, 0]
-        direction[2] = 0.0
-        norm = float(np.linalg.norm(direction))
-        direction = direction / norm if norm > 1e-6 else np.array([1.0, 0.0, 0.0])
-    reach = float(target_half[0] + item_half[0] + 0.05)
-    center = np.array(target_pos, dtype=np.float64) + direction * reach
-    center[2] = float(table_center[2] + item_half[2])
-    return _clamp_xy(center, item_half, table_center, table_half)
-
-
-def _free_spot(item_pos, item_half, occupied, table_center, table_half, z: float) -> np.ndarray:
-    best = None
-    best_distance = 1e9
-    x_lo = table_center[0] - table_half[0] + item_half[0]
-    x_hi = table_center[0] + table_half[0] - item_half[0]
-    y_lo = table_center[1] - table_half[1] + item_half[1]
-    y_hi = table_center[1] + table_half[1] - item_half[1]
-    for x in np.linspace(x_lo, x_hi, 7):
-        for y in np.linspace(y_lo, y_hi, 7):
-            center = np.array([float(x), float(y), z])
-            if any(_overlap(center, item_half, other, half) for other, half in occupied):
-                continue
-            distance = float(np.hypot(center[0] - item_pos[0], center[1] - item_pos[1]))
-            if distance < best_distance:
-                best, best_distance = center, distance
-    if best is None:
-        best = np.array([float(table_center[0]), float(table_center[1]), z])
-    return best
-
-
-def _overlap(center, half, other, other_half) -> bool:
-    return bool(
-        abs(center[0] - other[0]) < half[0] + other_half[0] and abs(center[1] - other[1]) < half[1] + other_half[1]
-    )
+def _clear_of(item: Body, target: Body, table_center, table_half, bottom: float) -> np.ndarray:
+    direction = np.array(target.rot[:, 0], dtype=np.float64)
+    direction[2] = 0.0
+    norm = float(np.linalg.norm(direction))
+    direction = direction / norm if norm > 1e-6 else np.array([1.0, 0.0, 0.0])
+    edge = float(((target.corners - target.pos) @ direction).max())
+    back = float((-(item.corners - item.pos) @ direction).max())
+    center = np.array(target.pos, dtype=np.float64) + direction * (edge + back + _CLEARANCE_M)
+    center[2] = float(table_center[2] - bottom)
+    half = (item.corners.max(axis=0) - item.corners.min(axis=0)) / 2.0
+    return _clamp_xy(center, half, table_center, table_half)
 
 
 def _clamp_xy(center: np.ndarray, item_half, table_center, table_half) -> np.ndarray:

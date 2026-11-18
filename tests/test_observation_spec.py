@@ -5,15 +5,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1] / "source" / "franka_tabletop_rl"
-sys.path.insert(0, str(PACKAGE))
-
-from franka_tabletop_rl.scene.cameras import (  # noqa: E402
+from franka_tabletop_rl.scene.cameras import (
     OBSERVATION_CAMERAS,
     requested_cameras,
     selected_cameras,

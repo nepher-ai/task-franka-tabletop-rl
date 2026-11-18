@@ -11,7 +11,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
 
 # Apertures are centimeters. Focal lengths are 2.1 (exterior), 2.8 (wrist), and 24 (front).
-# Render size matches the LeRobot frame, so recording does not scale a 720p image on the GPU.
+# Render size matches the 320x180 frames of recorded datasets, so capture does not scale a 720p image on the GPU.
 _CAMERA_HEIGHT = 180
 _CAMERA_WIDTH = 320
 _EXTERIOR_LENS = dict(focal_length=2.1, focus_distance=28.0, horizontal_aperture=5.376, vertical_aperture=3.024)
@@ -62,6 +62,16 @@ def finger_contact(name: str) -> ContactSensorCfg:
         update_period=0.0,
         history_length=1,
         filter_prim_paths_expr=[],
+    )
+
+
+def pair_contact(entity: str, partner_paths: list[str]) -> ContactSensorCfg:
+    """Contact force [N] on object position ``entity``, with one filter per partner prim path, in order."""
+    return ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/" + entity,
+        update_period=0.0,
+        history_length=1,
+        filter_prim_paths_expr=partner_paths,
     )
 
 

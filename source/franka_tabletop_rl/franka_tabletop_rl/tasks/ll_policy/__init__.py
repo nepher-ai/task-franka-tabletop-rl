@@ -10,28 +10,37 @@ Registered environments:
   Nepher-FrankaTabletopRL-LL-Play-v0  evaluation (32 envs, no noise)
 """
 
-import gymnasium as gym
-
 from . import agents
 
-gym.register(
-    id="Nepher-FrankaTabletopRL-LL-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg",
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
-        "default_agent": "rsl_rl",
-    },
-)
 
-gym.register(
-    id="Nepher-FrankaTabletopRL-LL-Play-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg_PLAY",
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
-        "default_agent": "rsl_rl",
-    },
-)
+def _register() -> None:
+    """Register the low-level tasks. Skipped when gymnasium is not installed."""
+    try:
+        import gymnasium as gym
+    except ImportError:
+        return
+
+    gym.register(
+        id="Nepher-FrankaTabletopRL-LL-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg",
+            "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
+            "default_agent": "rsl_rl",
+        },
+    )
+
+    gym.register(
+        id="Nepher-FrankaTabletopRL-LL-Play-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": f"{__name__}.ll_env_cfg:LLEnvCfg_PLAY",
+            "rsl_rl_cfg_entry_point": f"{agents.__name__}.ppo_cfg:LLPPORunnerCfg",
+            "default_agent": "rsl_rl",
+        },
+    )
+
+
+_register()

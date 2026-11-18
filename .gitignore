@@ -19,6 +19,7 @@ output/
 runs/
 datasets/
 recordings/
+/film/
 videos/
 wandb/
 *.tmp
