@@ -382,7 +382,7 @@ class ClassicalTabletopPlanner:
 
     def _placed(self, index: int, pair: int) -> bool:
         goal = self.contexts[index].goals[pair]
-        spec_goal = Goal(goal.slot, goal.op, getattr(goal, "target", ""))
+        spec_goal = getattr(goal, "spec", None) or Goal(goal.slot, goal.op, getattr(goal, "target", ""))
         return bool(self.tracker.latched[index].get(latch_key(spec_goal), False))
 
     def _pre_grasp(self, context, index, tcp, closure) -> None:

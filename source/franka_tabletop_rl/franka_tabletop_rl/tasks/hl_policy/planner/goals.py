@@ -19,6 +19,7 @@ from franka_tabletop_rl.benchmark.spec import Check, Goal
 _HOLD = {"picked_up"}
 _PLACE = {
     "in_container",
+    "inside",
     "enclosed",
     "on_top",
     "stacked",
@@ -27,6 +28,7 @@ _PLACE = {
     "outside_and_on_surface",
     "centered",
 }
+_PLANNER_OP = {"inside": "in_container"}
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,7 @@ class PlaceGoal:
     op: str
     target: str
     side: str = "left"
+    spec: Goal | None = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +101,7 @@ def _convert(goal: Goal) -> PlaceGoal | HoldGoal:
         return HoldGoal(goal.slot, goal.op, goal.distance)
     if goal.op not in _PLACE:
         raise ValueError(f"planner has no placement for {goal.op}")
-    return PlaceGoal(goal.slot, goal.op, goal.target, goal.side)
+    return PlaceGoal(goal.slot, _PLANNER_OP.get(goal.op, goal.op), goal.target, goal.side, goal)
 
 
 def _child_distance(check: Check, positions, home) -> float:

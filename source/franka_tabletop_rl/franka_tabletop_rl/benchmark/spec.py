@@ -13,6 +13,7 @@ from .geometry import SURFACE_SLOT
 
 OPS = (
     "in_container",
+    "inside",
     "enclosed",
     "outside",
     "outside_and_on_surface",

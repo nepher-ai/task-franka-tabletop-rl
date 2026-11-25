@@ -5,10 +5,13 @@
 
 """Instantaneous episode success, judged the way the reference benchmark judges it. Lengths are [m], forces [N].
 
-An episode succeeds when a stateless predicate holds on the current state. Containment tests the
-hull center of the object against the open-top hull of the container. Support and stacking read the
-contact forces between the two bodies. The only history is the first-placement step that
-``in_order`` compares. ``task_progress`` keeps the latched score that the planner reads.
+An episode succeeds when a stateless predicate holds on the current state. ``inside`` requires every
+convex-hull vertex of the object to lie in the container's closed hull, so no part extends past a
+wall or out of the mouth. ``in_container`` tests the hull center against the open-top hull for a
+compact object, and for a slender object requires a run of its centerline in the closed hull, at
+least the longer of its second edge and 35% of its length. Support and stacking read the contact
+forces between the two bodies. The only history is the first-placement step that ``in_order``
+compares. ``task_progress`` keeps the latched score that the planner reads.
 
 A stage that names a reference also needs that reference to sit near the pose it had at reset, so
 toppling or shoving a shelf, bin, or bowl cannot satisfy it. A reference that another passing stage of
@@ -24,7 +27,10 @@ import numpy as np
 
 from .geometry import (
     SURFACE_SLOT,
+    box_extents,
+    centerline_inside_length,
     hull_center_in,
+    hull_contained,
     rotation,
     world_box_center,
     world_box_corners,
@@ -48,6 +54,10 @@ CENTERED_TOL_M = 0.01
 # How far [m] and how much [rad] a reference may leave its reset pose.
 FIXTURE_MOVE_M = 0.05
 FIXTURE_TURN_RAD = math.radians(15.0)
+# Longest box edge over the next one. At or above this, containment uses the centerline.
+SLENDER_EDGE_RATIO = 3.0
+# Share of the long edge that must lie in the closed hull, unless the second edge is longer.
+SLENDER_INSIDE_FRACTION = 0.35
 
 
 @dataclass(frozen=True)
@@ -266,6 +276,8 @@ def _geometry(goal: Goal, state: _State) -> bool:
     item = state.poses[goal.slot]
     target = state.poses.get(goal.target)
     op = goal.op
+    if op == "inside":
+        return _fully_inside(item, target)
     if op == "in_container":
         return _contains(item, target, "planes_open_top")
     if op == "enclosed":
@@ -315,16 +327,60 @@ def _corners(pose: dict) -> np.ndarray:
     return world_box_corners(pose["geometry"], _vec(pose["pos"]), pose["quat"])
 
 
-def _contains(item: dict, container: dict, planes: str) -> bool:
-    """Whether the hull center of ``item`` lies inside the chosen hull planes of ``container``."""
-    return hull_center_in(
+def _fully_inside(item: dict, container: dict) -> bool:
+    """Whether every hull vertex of ``item`` lies in the container's closed hull.
+
+    The mouth is a wall of that hull, so a part that sticks out of the opening is outside.
+    ``tolerance`` is unused.
+    """
+    return hull_contained(
         item["geometry"],
         _vec(item["pos"]),
         item["quat"],
         _vec(container["pos"]),
         container["quat"],
-        getattr(container["geometry"], planes),
+        container["geometry"].planes_full,
     )
+
+
+def _contains(item: dict, container: dict, planes: str) -> bool:
+    """Whether ``item`` lies in the chosen hull of ``container``.
+
+    A compact object uses the hull center. A slender object in an open container uses the seated
+    centerline instead, so a center in the open column above the rim does not count.
+    """
+    item_pos, item_quat = _vec(item["pos"]), item["quat"]
+    container_pos, container_quat = _vec(container["pos"]), container["quat"]
+    if planes == "planes_open_top" and _is_slender(item):
+        return _centerline_seated(item, container, item_pos, item_quat, container_pos, container_quat)
+    chosen = getattr(container["geometry"], planes)
+    return hull_center_in(item["geometry"], item_pos, item_quat, container_pos, container_quat, chosen)
+
+
+def _is_slender(item: dict) -> bool:
+    """Whether the longest box edge is at least :data:`SLENDER_EDGE_RATIO` times the next."""
+    ordered = np.sort(box_extents(item["geometry"]))
+    longest, second = float(ordered[2]), float(ordered[1])
+    return second > 0.0 and longest >= SLENDER_EDGE_RATIO * second
+
+
+def _centerline_seated(
+    item: dict, container: dict, item_pos, item_quat, container_pos, container_quat
+) -> bool:
+    """Whether a slender object has enough of its centerline inside the closed hull."""
+    ordered = np.sort(box_extents(item["geometry"]))
+    longest, second = float(ordered[2]), float(ordered[1])
+    # At a 3x edge the 35% share is longer than the second edge, so it sets the run.
+    need = max(second, SLENDER_INSIDE_FRACTION * longest)
+    seated = centerline_inside_length(
+        item["geometry"],
+        item_pos,
+        item_quat,
+        container_pos,
+        container_quat,
+        container["geometry"].planes_full,
+    )
+    return seated >= need
 
 
 def _in_footprint(item: dict, support: dict, tolerance: float) -> bool:

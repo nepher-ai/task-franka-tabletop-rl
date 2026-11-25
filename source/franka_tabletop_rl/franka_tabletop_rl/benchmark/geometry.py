@@ -34,6 +34,8 @@ class AssetGeometry:
         box_corners: Box corners [m], shape ``[8, 3]``.
         box_center: Center of the box [m], shape ``[3]``.
         hull_center: Mean of the convex hull vertices [m], shape ``[3]``. A containment test uses it.
+        hull_vertices: Convex hull vertices [m], shape ``[V, 3]``. ``inside`` requires every one of them
+            to lie in the container.
         planes_full: Closed hull planes ``(nx, ny, nz, d)``, shape ``[F, 4]``.
         planes_open_top: Planes of the hull without the upward faces, shape ``[F_kept, 4]``.
         from_mesh: False when the geometry is the ``size_m`` box and not a mesh.
@@ -42,6 +44,7 @@ class AssetGeometry:
     box_corners: np.ndarray
     box_center: np.ndarray
     hull_center: np.ndarray
+    hull_vertices: np.ndarray
     planes_full: np.ndarray
     planes_open_top: np.ndarray
     from_mesh: bool = True
@@ -68,6 +71,7 @@ def from_points(points: np.ndarray) -> AssetGeometry:
         box_corners=_box_corners(low, high),
         box_center=(low + high) / 2.0,
         hull_center=points[hull.vertices].mean(axis=0),
+        hull_vertices=points[hull.vertices],
         planes_full=planes,
         planes_open_top=open_top_planes(planes),
     )
@@ -79,13 +83,15 @@ def from_box(size_m, warn: str | None = None) -> AssetGeometry:
         warnings.warn(f"{warn} has no mesh; success uses its size_m box", stacklevel=2)
     half = np.asarray(size_m, dtype=np.float64).reshape(3) / 2.0
     eye = np.eye(3)
+    corners = _box_corners(-half, half)
     planes = np.concatenate(
         [np.concatenate([eye, -half[:, None]], axis=1), np.concatenate([-eye, -half[:, None]], axis=1)]
     )
     return AssetGeometry(
-        box_corners=_box_corners(-half, half),
+        box_corners=corners,
         box_center=np.zeros(3),
         hull_center=np.zeros(3),
+        hull_vertices=corners,
         planes_full=planes,
         planes_open_top=open_top_planes(planes),
         from_mesh=False,
@@ -168,3 +174,57 @@ def hull_center_in(item: AssetGeometry, item_pos, item_quat, container_pos, cont
     point = to_world(item_pos, item_quat, item.hull_center)
     local = rotation(container_quat).T @ (point - np.asarray(container_pos, dtype=np.float64).reshape(3))
     return bool(np.max(planes[:, :3] @ local + planes[:, 3]) <= 0.0)
+
+
+def hull_contained(item: AssetGeometry, item_pos, item_quat, container_pos, container_quat, planes: np.ndarray) -> bool:
+    """Whether every convex-hull vertex of ``item`` is inside the polytope ``planes``.
+
+    The container polytope is convex, so this is the whole object. A vertex on a face counts.
+    """
+    if len(item.hull_vertices) == 0 or len(planes) == 0:
+        return False
+    world = to_world(item_pos, item_quat, item.hull_vertices)
+    origin = np.asarray(container_pos, dtype=np.float64).reshape(3)
+    local = (world - origin) @ rotation(container_quat)
+    return bool(np.max(local @ planes[:, :3].T + planes[:, 3]) <= 0.0)
+
+
+def box_extents(geometry: AssetGeometry) -> np.ndarray:
+    """Edge lengths [m] of the root-frame box, shape ``[3]``."""
+    corners = geometry.box_corners
+    return corners.max(axis=0) - corners.min(axis=0)
+
+
+def centerline_inside_length(
+    item: AssetGeometry,
+    item_pos,
+    item_quat,
+    container_pos,
+    container_quat,
+    planes: np.ndarray,
+    step_m: float = 0.01,
+) -> float:
+    """Longest contiguous centerline run [m] of ``item`` inside the polytope ``planes``.
+
+    The centerline is the root-frame box center, sampled along the longest box edge about every
+    ``step_m``. A single sample inside has length 0.
+    """
+    extents = box_extents(item)
+    axis = int(np.argmax(extents))
+    length = float(extents[axis])
+    if length <= 1e-9 or len(planes) == 0 or step_m <= 0.0:
+        return 0.0
+    count = max(2, int(np.ceil(length / step_m)) + 1)
+    local = np.repeat(item.box_center.reshape(1, 3), count, axis=0)
+    local[:, axis] = item.box_center[axis] + np.linspace(-0.5 * length, 0.5 * length, count)
+    world = to_world(item_pos, item_quat, local)
+    origin = np.asarray(container_pos, dtype=np.float64).reshape(3)
+    container_local = (world - origin) @ rotation(container_quat)
+    inside = np.max(container_local @ planes[:, :3].T + planes[:, 3], axis=1) <= 0.0
+    best = current = 0
+    for flag in inside:
+        current = current + 1 if flag else 0
+        best = max(best, current)
+    if best <= 1:
+        return 0.0
+    return (best - 1) * length / (count - 1)
